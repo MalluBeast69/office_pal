@@ -72,38 +72,39 @@ class _FacultyDashboardPageState extends ConsumerState<FacultyDashboardPage> {
   }
 
   Future<void> _requestLeave() async {
+    developer.log('Starting leave request process');
+
+    developer.log('Showing leave request dialog');
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
+      barrierDismissible: false,
       builder: (context) => LeaveRequestDialog(
         facultyName: widget.facultyName,
         departmentId: widget.departmentId,
       ),
     );
 
+    developer.log('Dialog result: $result');
     if (result != null) {
       setState(() => isLoading = true);
       try {
-        // Get the current user session
-        final session = Supabase.instance.client.auth.currentSession;
-        if (session == null) {
-          throw Exception('No authenticated session found');
-        }
-
-        await Supabase.instance.client.from('notifications').insert({
+        developer.log('Submitting leave request to Supabase');
+        final response =
+            await Supabase.instance.client.from('notifications').insert({
           'type': 'leave_request',
           'from_faculty_id': widget.facultyId,
           'title': 'Leave Request from ${widget.facultyName}',
           'message': result['reason'],
-          'status': 'pending', // Explicitly set the status
+          'status': 'pending',
           'metadata': jsonEncode({
-            // Ensure metadata is properly encoded
             'faculty_name': widget.facultyName,
             'department': widget.departmentId,
             'from_date': result['fromDate'],
             'to_date': result['toDate'],
             'reason': result['reason'],
           }),
-        });
+        }).select();
+        developer.log('Leave request submitted successfully: $response');
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -115,7 +116,8 @@ class _FacultyDashboardPageState extends ConsumerState<FacultyDashboardPage> {
           _loadData();
         }
       } catch (error) {
-        developer.log('Error submitting leave request: $error');
+        developer.log('Error submitting leave request: $error',
+            error: error, stackTrace: StackTrace.current);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -130,22 +132,30 @@ class _FacultyDashboardPageState extends ConsumerState<FacultyDashboardPage> {
   }
 
   void _signOut() async {
-    await Supabase.instance.client.auth.signOut();
+    developer.log('Navigating to login page');
     if (mounted) {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
           builder: (context) => const LoginPage(),
         ),
-        (route) => false, // This removes all previous routes from the stack
+        (route) => false,
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    final isSmallScreen = screenSize.width < 600;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('Welcome, ${widget.facultyName}'),
+        title: Text(
+          'Welcome, ${widget.facultyName}',
+          style: TextStyle(
+            fontSize: isSmallScreen ? 18 : 20,
+          ),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
@@ -158,49 +168,67 @@ class _FacultyDashboardPageState extends ConsumerState<FacultyDashboardPage> {
           : RefreshIndicator(
               onRefresh: _loadData,
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
+                padding: EdgeInsets.all(isSmallScreen ? 8.0 : 16.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Faculty Information Card
                     Card(
                       child: Padding(
-                        padding: const EdgeInsets.all(16.0),
+                        padding: EdgeInsets.all(isSmallScreen ? 12.0 : 16.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'Faculty Information',
                               style: TextStyle(
-                                fontSize: 20,
+                                fontSize: isSmallScreen ? 18 : 20,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                             const SizedBox(height: 8),
-                            Text('ID: ${widget.facultyId}'),
-                            Text('Department: ${widget.departmentId}'),
+                            Wrap(
+                              spacing: 16,
+                              children: [
+                                Text('ID: ${widget.facultyId}'),
+                                Text('Department: ${widget.departmentId}'),
+                              ],
+                            ),
                           ],
                         ),
                       ),
                     ),
                     const SizedBox(height: 24),
-                    Row(
-                      children: [
-                        const Text(
-                          'Assigned Courses',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
+                    // Courses Header
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Assigned Courses',
+                              style: TextStyle(
+                                fontSize: isSmallScreen ? 18 : 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
-                        ),
-                        const Spacer(),
-                        FilledButton.icon(
-                          onPressed: _requestLeave,
-                          icon: const Icon(Icons.calendar_today),
-                          label: const Text('Request Leave'),
-                        ),
-                      ],
+                          SizedBox(width: isSmallScreen ? 8 : 16),
+                          FilledButton.icon(
+                            onPressed: _requestLeave,
+                            icon: const Icon(Icons.calendar_today),
+                            label: Text(
+                              'Request Leave',
+                              style: TextStyle(
+                                fontSize: isSmallScreen ? 13 : 14,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 16),
+                    // Courses List
                     if (assignedCourses.isEmpty)
                       const Card(
                         child: Padding(
@@ -209,33 +237,53 @@ class _FacultyDashboardPageState extends ConsumerState<FacultyDashboardPage> {
                         ),
                       )
                     else
-                      ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: assignedCourses.length,
-                        itemBuilder: (context, index) {
-                          final course = assignedCourses[index];
-                          return Card(
-                            child: ListTile(
-                              title: Text(course['course_name']),
-                              subtitle: Text(
-                                'Code: ${course['course_code']}\n'
-                                'Credits: ${course['credit']}',
-                              ),
-                              isThreeLine: true,
-                            ),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          return Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: assignedCourses.map((course) {
+                              return SizedBox(
+                                width: constraints.maxWidth > 600
+                                    ? (constraints.maxWidth / 2) - 12
+                                    : constraints.maxWidth,
+                                child: Card(
+                                  child: ListTile(
+                                    title: Text(
+                                      course['course_name'],
+                                      style: TextStyle(
+                                        fontSize: isSmallScreen ? 15 : 16,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      'Code: ${course['course_code']}\n'
+                                      'Credits: ${course['credit']}',
+                                      style: TextStyle(
+                                        fontSize: isSmallScreen ? 13 : 14,
+                                      ),
+                                    ),
+                                    isThreeLine: true,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
                           );
                         },
                       ),
                     const SizedBox(height: 24),
-                    const Text(
-                      'Leave Requests',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+                    // Leave Requests Header
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Text(
+                        'Leave Requests',
+                        style: TextStyle(
+                          fontSize: isSmallScreen ? 18 : 20,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
+                    // Leave Requests List
                     if (leaveRequests.isEmpty)
                       const Card(
                         child: Padding(
@@ -244,62 +292,92 @@ class _FacultyDashboardPageState extends ConsumerState<FacultyDashboardPage> {
                         ),
                       )
                     else
-                      ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: leaveRequests.length,
-                        itemBuilder: (context, index) {
-                          final request = leaveRequests[index];
-                          final metadata = jsonDecode(request['metadata']);
-                          return Card(
-                            child: ListTile(
-                              title: Text(request['title']),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(request['message']),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'From: ${metadata['from_date']} To: ${metadata['to_date']}',
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: request['status'] == 'pending'
-                                          ? Colors.orange.withOpacity(0.1)
-                                          : request['status'] == 'approved'
-                                              ? Colors.green.withOpacity(0.1)
-                                              : Colors.red.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: request['status'] == 'pending'
-                                            ? Colors.orange
-                                            : request['status'] == 'approved'
-                                                ? Colors.green
-                                                : Colors.red,
-                                      ),
-                                    ),
-                                    child: Text(
-                                      request['status'].toUpperCase(),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          return Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: leaveRequests.map((request) {
+                              final metadata = jsonDecode(request['metadata']);
+                              return SizedBox(
+                                width: constraints.maxWidth > 600
+                                    ? (constraints.maxWidth / 2) - 12
+                                    : constraints.maxWidth,
+                                child: Card(
+                                  child: ListTile(
+                                    title: Text(
+                                      request['title'],
                                       style: TextStyle(
-                                        color: request['status'] == 'pending'
-                                            ? Colors.orange
-                                            : request['status'] == 'approved'
-                                                ? Colors.green
-                                                : Colors.red,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
+                                        fontSize: isSmallScreen ? 15 : 16,
                                       ),
                                     ),
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          request['message'],
+                                          style: TextStyle(
+                                            fontSize: isSmallScreen ? 13 : 14,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'From: ${metadata['from_date']} To: ${metadata['to_date']}',
+                                          style: TextStyle(
+                                            fontSize: isSmallScreen ? 12 : 13,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: request['status'] ==
+                                                    'pending'
+                                                ? Colors.orange.withOpacity(0.1)
+                                                : request['status'] ==
+                                                        'approved'
+                                                    ? Colors.green
+                                                        .withOpacity(0.1)
+                                                    : Colors.red
+                                                        .withOpacity(0.1),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                            border: Border.all(
+                                              color:
+                                                  request['status'] == 'pending'
+                                                      ? Colors.orange
+                                                      : request['status'] ==
+                                                              'approved'
+                                                          ? Colors.green
+                                                          : Colors.red,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            request['status'].toUpperCase(),
+                                            style: TextStyle(
+                                              color:
+                                                  request['status'] == 'pending'
+                                                      ? Colors.orange
+                                                      : request['status'] ==
+                                                              'approved'
+                                                          ? Colors.green
+                                                          : Colors.red,
+                                              fontSize: isSmallScreen ? 11 : 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    isThreeLine: true,
                                   ),
-                                ],
-                              ),
-                              isThreeLine: true,
-                            ),
+                                ),
+                              );
+                            }).toList(),
                           );
                         },
                       ),
@@ -338,6 +416,10 @@ class _LeaveRequestDialogState extends State<LeaveRequestDialog> {
   }
 
   Future<void> _selectDate(bool isFromDate) async {
+    // Unfocus any text field before showing date picker
+    FocusScope.of(context).unfocus();
+    await Future.delayed(const Duration(milliseconds: 100));
+
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: DateTime.now(),
@@ -345,7 +427,7 @@ class _LeaveRequestDialogState extends State<LeaveRequestDialog> {
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
 
-    if (picked != null) {
+    if (picked != null && mounted) {
       setState(() {
         if (isFromDate) {
           _fromDate = picked;
@@ -361,86 +443,142 @@ class _LeaveRequestDialogState extends State<LeaveRequestDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Request Leave'),
-      content: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                title: const Text('From Date'),
-                subtitle: Text(
-                  _fromDate == null
-                      ? 'Select date'
-                      : _fromDate.toString().split(' ')[0],
-                ),
-                trailing: const Icon(Icons.calendar_today),
-                onTap: () => _selectDate(true),
-              ),
-              ListTile(
-                title: const Text('To Date'),
-                subtitle: Text(
-                  _toDate == null
-                      ? 'Select date'
-                      : _toDate.toString().split(' ')[0],
-                ),
-                trailing: const Icon(Icons.calendar_today),
-                onTap: () => _selectDate(false),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _reasonController,
-                decoration: const InputDecoration(
-                  labelText: 'Reason for Leave',
-                  border: OutlineInputBorder(),
-                  helperText: 'Please provide at least 10 characters',
-                  helperMaxLines: 2,
-                  hintText: 'Enter a detailed reason for your leave request',
-                ),
-                maxLines: 3,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter a reason';
-                  }
-                  if (value.trim().length < 10) {
-                    return 'Reason must be at least 10 characters long';
-                  }
-                  return null;
-                },
-              ),
-            ],
+    final screenSize = MediaQuery.of(context).size;
+    final isSmallScreen = screenSize.width < 600;
+    final dialogWidth = isSmallScreen ? screenSize.width * 0.9 : 500.0;
+
+    return Dialog(
+      child: Container(
+        width: dialogWidth,
+        constraints: BoxConstraints(
+          maxHeight: screenSize.height * 0.8,
+          maxWidth: 600,
+        ),
+        child: AlertDialog(
+          title: Text(
+            'Request Leave',
+            style: TextStyle(
+              fontSize: isSmallScreen ? 18 : 20,
+            ),
           ),
+          content: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    title: Text(
+                      'From Date',
+                      style: TextStyle(
+                        fontSize: isSmallScreen ? 15 : 16,
+                      ),
+                    ),
+                    subtitle: Text(
+                      _fromDate == null
+                          ? 'Select date'
+                          : _fromDate.toString().split(' ')[0],
+                      style: TextStyle(
+                        fontSize: isSmallScreen ? 13 : 14,
+                      ),
+                    ),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () => _selectDate(true),
+                  ),
+                  ListTile(
+                    title: Text(
+                      'To Date',
+                      style: TextStyle(
+                        fontSize: isSmallScreen ? 15 : 16,
+                      ),
+                    ),
+                    subtitle: Text(
+                      _toDate == null
+                          ? 'Select date'
+                          : _toDate.toString().split(' ')[0],
+                      style: TextStyle(
+                        fontSize: isSmallScreen ? 13 : 14,
+                      ),
+                    ),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () => _selectDate(false),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _reasonController,
+                    style: TextStyle(
+                      fontSize: isSmallScreen ? 14 : 15,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Reason for Leave',
+                      border: const OutlineInputBorder(),
+                      helperText: 'Please provide at least 10 characters',
+                      helperMaxLines: 2,
+                      hintText:
+                          'Enter a detailed reason for your leave request',
+                      helperStyle: TextStyle(
+                        fontSize: isSmallScreen ? 12 : 13,
+                      ),
+                      labelStyle: TextStyle(
+                        fontSize: isSmallScreen ? 14 : 15,
+                      ),
+                    ),
+                    maxLines: 3,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter a reason';
+                      }
+                      if (value.trim().length < 10) {
+                        return 'Reason must be at least 10 characters long';
+                      }
+                      return null;
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  fontSize: isSmallScreen ? 13 : 14,
+                ),
+              ),
+            ),
+            FilledButton(
+              onPressed: () {
+                // Unfocus before validation
+                FocusScope.of(context).unfocus();
+                if (_formKey.currentState!.validate() &&
+                    _fromDate != null &&
+                    _toDate != null) {
+                  Navigator.pop(context, {
+                    'fromDate': _fromDate.toString(),
+                    'toDate': _toDate.toString(),
+                    'reason': _reasonController.text.trim(),
+                  });
+                } else if (_fromDate == null || _toDate == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please select both dates'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              child: Text(
+                'Submit',
+                style: TextStyle(
+                  fontSize: isSmallScreen ? 13 : 14,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () {
-            if (_formKey.currentState!.validate() &&
-                _fromDate != null &&
-                _toDate != null) {
-              Navigator.pop(context, {
-                'fromDate': _fromDate.toString(),
-                'toDate': _toDate.toString(),
-                'reason': _reasonController.text.trim(),
-              });
-            } else if (_fromDate == null || _toDate == null) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Please select both dates'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          },
-          child: const Text('Submit'),
-        ),
-      ],
     );
   }
 }

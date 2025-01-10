@@ -12,7 +12,11 @@ void main() async {
     anonKey: Constants.supabaseAnonKey,
   );
 
-  runApp(const ProviderScope(child: MyApp()));
+  runApp(
+    const ProviderScope(
+      child: MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -21,13 +25,28 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
       title: 'Office Pal',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
       home: const LoginPage(),
+      onGenerateRoute: (settings) {
+        // Define your routes here
+        switch (settings.name) {
+          case '/':
+          case '/login':
+            return MaterialPageRoute(
+              builder: (context) => const LoginPage(),
+            );
+          default:
+            // If the route is not found, navigate to login page
+            return MaterialPageRoute(
+              builder: (context) => const LoginPage(),
+            );
+        }
+      },
     );
   }
 }

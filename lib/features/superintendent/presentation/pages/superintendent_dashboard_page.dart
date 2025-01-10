@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'student_management_page.dart';
 import 'course_management_page.dart';
 import 'department_management_page.dart';
+import 'package:office_pal/features/superintendent/presentation/pages/faculty_management_page.dart';
 import 'dart:convert';
 import 'dart:developer' as developer;
 
@@ -17,65 +18,195 @@ class SuperintendentDashboardPage extends ConsumerStatefulWidget {
 
 class _SuperintendentDashboardPageState
     extends ConsumerState<SuperintendentDashboardPage> {
-  int _notificationCount = 0;
+  List<Map<String, dynamic>> notifications = [];
+  bool isLoading = false;
+  Map<String, int> stats = {
+    'students': 0,
+    'courses': 0,
+    'departments': 0,
+    'faculty': 0,
+  };
 
   @override
   void initState() {
     super.initState();
-    _loadNotificationCount();
+    _loadNotifications();
+    _loadStats();
   }
 
-  Future<void> _loadNotificationCount() async {
+  Future<void> _loadStats() async {
+    setState(() => isLoading = true);
     try {
-      final response = await Supabase.instance.client
-          .from('notifications')
-          .select('*', const FetchOptions(count: CountOption.exact))
-          .eq('status', 'pending');
+      final studentsCount = await Supabase.instance.client
+          .from('student')
+          .select('*', const FetchOptions(count: CountOption.exact));
+      final coursesCount = await Supabase.instance.client
+          .from('course')
+          .select('*', const FetchOptions(count: CountOption.exact));
+      final departmentsCount = await Supabase.instance.client
+          .from('departments')
+          .select('*', const FetchOptions(count: CountOption.exact));
+      final facultyCount = await Supabase.instance.client
+          .from('faculty')
+          .select('*', const FetchOptions(count: CountOption.exact));
 
-      setState(() {
-        _notificationCount = response.count ?? 0;
-      });
+      if (mounted) {
+        setState(() {
+          stats = {
+            'students': studentsCount.count ?? 0,
+            'courses': coursesCount.count ?? 0,
+            'departments': departmentsCount.count ?? 0,
+            'faculty': facultyCount.count ?? 0,
+          };
+          isLoading = false;
+        });
+      }
     } catch (e) {
-      developer.log('Error loading notification count: $e');
+      developer.log('Error loading stats: $e');
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
   }
 
-  void _signOut(BuildContext context) async {
-    await Supabase.instance.client.auth.signOut();
-    if (context.mounted) {
-      Navigator.of(context).pushReplacementNamed('/login');
-    }
-  }
-
-  void _showNotifications() async {
+  Future<void> _loadNotifications() async {
+    setState(() => isLoading = true);
     try {
       final response = await Supabase.instance.client
           .from('notifications')
           .select()
-          .order('created_at', ascending: false)
-          .limit(50);
+          .order('created_at', ascending: false);
 
       if (mounted) {
-        showDialog(
-          context: context,
-          builder: (context) => NotificationsDialog(
-            notifications: List<Map<String, dynamic>>.from(response),
-            onStatusChanged: () {
-              _loadNotificationCount();
-            },
-          ),
-        );
+        setState(() {
+          notifications = List<Map<String, dynamic>>.from(response);
+          isLoading = false;
+        });
       }
-    } catch (e) {
-      developer.log('Error loading notifications: $e');
+    } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to load notifications'),
+          SnackBar(
+            content: Text('Error loading notifications: $error'),
             backgroundColor: Colors.red,
           ),
         );
+        setState(() => isLoading = false);
       }
+    }
+  }
+
+  Future<void> _updateNotificationStatus(
+      Map<String, dynamic> notification, String status) async {
+    setState(() => isLoading = true);
+    try {
+      // Update notification status
+      await Supabase.instance.client
+          .from('notifications')
+          .update({'status': status}).eq('id', notification['id']);
+
+      // If this is a leave request and it's being approved/declined,
+      // update faculty availability
+      if (notification['type'] == 'leave_request') {
+        final metadata = jsonDecode(notification['metadata']);
+        if (status == 'approved') {
+          await Supabase.instance.client
+              .from('faculty')
+              .update({'is_available': false}).eq(
+                  'faculty_id', notification['from_faculty_id']);
+        }
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Request ${status.toUpperCase()}'),
+          backgroundColor: Colors.green,
+          action: SnackBarAction(
+            label: 'Delete',
+            textColor: Colors.white,
+            onPressed: () => _showDeleteConfirmation(notification),
+          ),
+        ),
+      );
+      _loadNotifications();
+    } catch (error) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error updating status: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      setState(() => isLoading = false);
+    }
+  }
+
+  Future<void> _deleteNotification(Map<String, dynamic> notification) async {
+    setState(() => isLoading = true);
+    try {
+      await Supabase.instance.client
+          .from('notifications')
+          .delete()
+          .eq('id', notification['id']);
+
+      // Update the local state immediately
+      setState(() {
+        notifications.removeWhere((n) => n['id'] == notification['id']);
+        isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Notification deleted'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (error) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error deleting notification: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      setState(() => isLoading = false);
+    }
+  }
+
+  Future<bool> _showDeleteConfirmation(
+      Map<String, dynamic> notification) async {
+    final bool? result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Notification'),
+        content:
+            const Text('Are you sure you want to delete this notification?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context, true);
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      await _deleteNotification(notification);
+    }
+    return result ?? false;
+  }
+
+  void _signOut() async {
+    await Supabase.instance.client.auth.signOut();
+    if (mounted) {
+      Navigator.of(context).pushReplacementNamed('/login');
     }
   }
 
@@ -92,9 +223,11 @@ class _SuperintendentDashboardPageState
             children: [
               IconButton(
                 icon: const Icon(Icons.notifications),
-                onPressed: _showNotifications,
+                onPressed: () => _showNotificationsDialog(),
               ),
-              if (_notificationCount > 0)
+              if (notifications
+                  .where((n) => n['status'] == 'pending')
+                  .isNotEmpty)
                 Positioned(
                   right: 8,
                   top: 8,
@@ -109,7 +242,10 @@ class _SuperintendentDashboardPageState
                       minHeight: 16,
                     ),
                     child: Text(
-                      _notificationCount.toString(),
+                      notifications
+                          .where((n) => n['status'] == 'pending')
+                          .length
+                          .toString(),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 10,
@@ -122,82 +258,299 @@ class _SuperintendentDashboardPageState
           ),
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () => _signOut(context),
+            onPressed: _signOut,
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Quick Stats',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: () async {
+                await Future.wait([
+                  _loadNotifications(),
+                  _loadStats(),
+                ]);
+              },
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Quick Stats',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _StatsGrid(isSmallScreen: isSmallScreen),
+                    const SizedBox(height: 32),
+                    const Divider(height: 1),
+                    const SizedBox(height: 32),
+                    const Text(
+                      'Management Tools',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    GridView.count(
+                      crossAxisCount: isSmallScreen ? 1 : 3,
+                      shrinkWrap: true,
+                      mainAxisSpacing: 16,
+                      crossAxisSpacing: 16,
+                      childAspectRatio: isSmallScreen ? 2.5 : 1.2,
+                      children: [
+                        _DashboardCard(
+                          title: 'Student Management',
+                          icon: Icons.people,
+                          description:
+                              'Manage student records and course registrations',
+                          color: Colors.blue,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  const StudentManagementPage(),
+                            ),
+                          ),
+                        ),
+                        _DashboardCard(
+                          title: 'Course Management',
+                          icon: Icons.book,
+                          description:
+                              'Manage courses, credits, and departments',
+                          color: Colors.green,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  const CourseManagementPage(),
+                            ),
+                          ),
+                        ),
+                        _DashboardCard(
+                          title: 'Department Management',
+                          icon: Icons.business,
+                          description:
+                              'Manage departments and faculty assignments',
+                          color: Colors.orange,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  const DepartmentManagementPage(),
+                            ),
+                          ),
+                        ),
+                        _DashboardCard(
+                          title: 'Faculty Management',
+                          icon: Icons.people_outline,
+                          description:
+                              'Manage faculty members and their status',
+                          color: Colors.purple,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  const FacultyManagementPage(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 16),
-            _StatsGrid(isSmallScreen: isSmallScreen),
-            const SizedBox(height: 32),
-            const Divider(height: 1),
-            const SizedBox(height: 32),
-            const Text(
-              'Management Tools',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+    );
+  }
+
+  void _showNotificationsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => Dialog(
+          child: Container(
+            width: 600,
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.8,
             ),
-            const SizedBox(height: 20),
-            GridView.count(
-              crossAxisCount: isSmallScreen ? 1 : 3,
-              shrinkWrap: true,
-              mainAxisSpacing: 16,
-              crossAxisSpacing: 16,
-              childAspectRatio: isSmallScreen ? 2.5 : 1.2,
+            child: Column(
               children: [
-                _DashboardCard(
-                  title: 'Student Management',
-                  icon: Icons.people,
-                  description:
-                      'Manage student records and course registrations',
-                  color: Colors.blue,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const StudentManagementPage(),
-                    ),
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    children: [
+                      const Text(
+                        'Notifications',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
                   ),
                 ),
-                _DashboardCard(
-                  title: 'Course Management',
-                  icon: Icons.book,
-                  description: 'Manage courses, credits, and departments',
-                  color: Colors.green,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const CourseManagementPage(),
-                    ),
-                  ),
-                ),
-                _DashboardCard(
-                  title: 'Department Management',
-                  icon: Icons.business,
-                  description: 'Manage departments and faculty assignments',
-                  color: Colors.orange,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const DepartmentManagementPage(),
-                    ),
-                  ),
+                const Divider(height: 1),
+                Expanded(
+                  child: notifications.isEmpty
+                      ? const Center(
+                          child: Text('No notifications'),
+                        )
+                      : ListView.builder(
+                          itemCount: notifications.length,
+                          itemBuilder: (context, index) {
+                            final notification = notifications[index];
+                            final metadata =
+                                jsonDecode(notification['metadata'] ?? '{}');
+                            return Dismissible(
+                              key: Key(notification['id'].toString()),
+                              background: Container(
+                                color: Colors.red,
+                                alignment: Alignment.centerRight,
+                                padding: const EdgeInsets.only(right: 16.0),
+                                child: const Icon(
+                                  Icons.delete,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              direction: DismissDirection.endToStart,
+                              confirmDismiss: (direction) async {
+                                final result =
+                                    await _showDeleteConfirmation(notification);
+                                if (result && mounted) {
+                                  setState(() {}); // Refresh the dialog's UI
+                                }
+                                return result;
+                              },
+                              child: Card(
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                child: ListTile(
+                                  title: Text(notification['title'] ?? ''),
+                                  subtitle: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(notification['message'] ?? ''),
+                                      if (notification['type'] ==
+                                              'leave_request' &&
+                                          metadata != null)
+                                        Padding(
+                                          padding:
+                                              const EdgeInsets.only(top: 8.0),
+                                          child: Text(
+                                            'From: ${metadata['from_date'] ?? 'N/A'} To: ${metadata['to_date'] ?? 'N/A'}',
+                                          ),
+                                        ),
+                                      const SizedBox(height: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: notification['status'] ==
+                                                  'pending'
+                                              ? Colors.orange.withOpacity(0.1)
+                                              : notification['status'] ==
+                                                      'approved'
+                                                  ? Colors.green
+                                                      .withOpacity(0.1)
+                                                  : Colors.red.withOpacity(0.1),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          border: Border.all(
+                                            color: notification['status'] ==
+                                                    'pending'
+                                                ? Colors.orange
+                                                : notification['status'] ==
+                                                        'approved'
+                                                    ? Colors.green
+                                                    : Colors.red,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          (notification['status'] ?? 'pending')
+                                              .toUpperCase(),
+                                          style: TextStyle(
+                                            color: notification['status'] ==
+                                                    'pending'
+                                                ? Colors.orange
+                                                : notification['status'] ==
+                                                        'approved'
+                                                    ? Colors.green
+                                                    : Colors.red,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  trailing: notification['status'] == 'pending'
+                                      ? Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              icon: const Icon(
+                                                Icons.check_circle_outline,
+                                                color: Colors.green,
+                                              ),
+                                              onPressed: () {
+                                                _updateNotificationStatus(
+                                                    notification, 'approved');
+                                                Navigator.pop(context);
+                                              },
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(
+                                                Icons.cancel_outlined,
+                                                color: Colors.red,
+                                              ),
+                                              onPressed: () {
+                                                _updateNotificationStatus(
+                                                    notification, 'declined');
+                                                Navigator.pop(context);
+                                              },
+                                            ),
+                                          ],
+                                        )
+                                      : IconButton(
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            color: Colors.red,
+                                          ),
+                                          onPressed: () async {
+                                            final result =
+                                                await _showDeleteConfirmation(
+                                                    notification);
+                                            if (result && mounted) {
+                                              setState(
+                                                  () {}); // Refresh the dialog's UI
+                                            }
+                                          },
+                                        ),
+                                  isThreeLine: true,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -294,16 +647,16 @@ class _StatsGridState extends ConsumerState<_StatsGrid> {
     'students': 0,
     'courses': 0,
     'departments': 0,
-    'registrations': 0,
+    'faculty': 0,
   };
 
   @override
   void initState() {
     super.initState();
-    loadStats();
+    _loadStats();
   }
 
-  Future<void> loadStats() async {
+  Future<void> _loadStats() async {
     try {
       final studentsCount = await Supabase.instance.client
           .from('student')
@@ -314,8 +667,8 @@ class _StatsGridState extends ConsumerState<_StatsGrid> {
       final departmentsCount = await Supabase.instance.client
           .from('departments')
           .select('*', const FetchOptions(count: CountOption.exact));
-      final registrationsCount = await Supabase.instance.client
-          .from('registered_students')
+      final facultyCount = await Supabase.instance.client
+          .from('faculty')
           .select('*', const FetchOptions(count: CountOption.exact));
 
       if (mounted) {
@@ -324,12 +677,13 @@ class _StatsGridState extends ConsumerState<_StatsGrid> {
             'students': studentsCount.count ?? 0,
             'courses': coursesCount.count ?? 0,
             'departments': departmentsCount.count ?? 0,
-            'registrations': registrationsCount.count ?? 0,
+            'faculty': facultyCount.count ?? 0,
           };
           isLoading = false;
         });
       }
     } catch (e) {
+      developer.log('Error loading stats: $e');
       if (mounted) {
         setState(() => isLoading = false);
       }
@@ -367,9 +721,9 @@ class _StatsGridState extends ConsumerState<_StatsGrid> {
           isLoading: isLoading,
         ),
         _StatCard(
-          title: 'Course Registrations',
-          value: stats['registrations'] ?? 0,
-          icon: Icons.assignment,
+          title: 'Faculty Members',
+          value: stats['faculty'] ?? 0,
+          icon: Icons.people_outline,
           color: Colors.purple,
           isLoading: isLoading,
         ),
@@ -456,168 +810,6 @@ class _StatCard extends StatelessWidget {
                 color: color.withOpacity(0.8),
               ),
               textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class NotificationsDialog extends StatefulWidget {
-  final List<Map<String, dynamic>> notifications;
-  final VoidCallback onStatusChanged;
-
-  const NotificationsDialog({
-    super.key,
-    required this.notifications,
-    required this.onStatusChanged,
-  });
-
-  @override
-  State<NotificationsDialog> createState() => _NotificationsDialogState();
-}
-
-class _NotificationsDialogState extends State<NotificationsDialog> {
-  Future<void> _updateNotificationStatus(
-      String notificationId, String status) async {
-    try {
-      await Supabase.instance.client
-          .from('notifications')
-          .update({'status': status}).eq('id', notificationId);
-
-      if (status == 'approved') {
-        // Update faculty availability
-        final notification = widget.notifications
-            .firstWhere((n) => n['id'].toString() == notificationId);
-        if (notification['type'] == 'leave_request') {
-          await Supabase.instance.client
-              .from('faculty')
-              .update({'is_available': false}).eq(
-                  'faculty_id', notification['from_faculty_id']);
-        }
-      }
-
-      widget.onStatusChanged();
-    } catch (e) {
-      developer.log('Error updating notification: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to update notification'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      child: Container(
-        width: 600,
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.8,
-        ),
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  const Text(
-                    'Notifications',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-            Expanded(
-              child: widget.notifications.isEmpty
-                  ? const Center(
-                      child: Text('No notifications'),
-                    )
-                  : ListView.builder(
-                      itemCount: widget.notifications.length,
-                      itemBuilder: (context, index) {
-                        final notification = widget.notifications[index];
-                        final metadata =
-                            jsonDecode(notification['metadata'] ?? '{}');
-                        final isPending = notification['status'] == 'pending';
-
-                        return Card(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          child: ListTile(
-                            title: Text(notification['title']),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(notification['message']),
-                                if (metadata != null) ...[
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'From: ${metadata['faculty_name']} (${metadata['department']})',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  Text(
-                                      'Duration: ${DateTime.parse(metadata['from_date']).toString().split(' ')[0]} to ${DateTime.parse(metadata['to_date']).toString().split(' ')[0]}'),
-                                ],
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Status: ${notification['status'].toUpperCase()}',
-                                  style: TextStyle(
-                                    color: notification['status'] == 'pending'
-                                        ? Colors.orange
-                                        : notification['status'] == 'approved'
-                                            ? Colors.green
-                                            : Colors.red,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            trailing: isPending
-                                ? Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.check,
-                                            color: Colors.green),
-                                        onPressed: () =>
-                                            _updateNotificationStatus(
-                                                notification['id'].toString(),
-                                                'approved'),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.close,
-                                            color: Colors.red),
-                                        onPressed: () =>
-                                            _updateNotificationStatus(
-                                                notification['id'].toString(),
-                                                'rejected'),
-                                      ),
-                                    ],
-                                  )
-                                : null,
-                          ),
-                        );
-                      },
-                    ),
             ),
           ],
         ),

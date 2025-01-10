@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:loading_animation_widget/loading_animation_widget.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:office_pal/features/auth/presentation/pages/superintendent_login_page.dart';
+import 'package:office_pal/features/faculty/presentation/pages/faculty_dashboard_page.dart';
 
 enum LoginMode { student, faculty }
 
@@ -86,14 +87,26 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             backgroundColor: Colors.green,
           ),
         );
-        // TODO: Navigate to appropriate home page with user data
-        // For student:
-        // - data['student_name']
-        // - data['dept_id']
-        // - data['semester']
-        // For faculty:
-        // - data['faculty_name']
-        // - data['dept_id']
+
+        if (_loginMode == LoginMode.faculty) {
+          // Navigate to faculty dashboard
+          if (mounted) {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (context) => FacultyDashboardPage(
+                  facultyId: id.toUpperCase(),
+                  facultyName: data['faculty_name'],
+                  departmentId: data['dept_id'],
+                ),
+              ),
+            );
+          }
+        } else {
+          // TODO: Navigate to student dashboard when implemented
+          // data['student_name']
+          // data['dept_id']
+          // data['semester']
+        }
       }
     } on PostgrestException catch (error) {
       if (mounted) {

@@ -1,0 +1,9 @@
+student_reg_no,student_name,dept_id,semester
+INVALID_ID,John Smith,DPCS,5
+THAWSCS501,Sarah Johnson,INVALID_DEPT,5
+THAWSCS502,Michael Brown,DPCS,invalid
+THAWSCS502,Duplicate ID,DPCS,5
+THAWSCS503,,DPCS,5
+THAWSCS504,Too,Few,Columns
+THAWSCS505,James Wilson,DPCS,9
+THAWSCE039,Already Exists,DPCE,5 

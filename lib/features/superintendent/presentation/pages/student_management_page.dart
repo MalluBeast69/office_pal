@@ -642,6 +642,8 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isSmallScreen = MediaQuery.of(context).size.width < 500;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Student Management'),
@@ -678,89 +680,175 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
                   },
                 ),
                 const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        value: selectedDepartment,
-                        decoration: const InputDecoration(
-                          labelText: 'Department',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: [
-                          const DropdownMenuItem(
-                            value: null,
-                            child: Text('All Departments'),
-                          ),
-                          ...departments.map((dept) => DropdownMenuItem(
-                                value: dept,
-                                child: Text(dept),
-                              )),
-                        ],
-                        onChanged: (value) {
-                          setState(() {
-                            selectedDepartment = value;
-                            filterStudents();
-                          });
-                        },
-                      ),
+                if (isSmallScreen) ...[
+                  // Mobile layout for filters
+                  DropdownButtonFormField<String>(
+                    value: selectedDepartment,
+                    decoration: const InputDecoration(
+                      labelText: 'Department',
+                      border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        value: selectedSemester,
-                        decoration: const InputDecoration(
-                          labelText: 'Semester',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: [
-                          const DropdownMenuItem(
-                            value: null,
-                            child: Text('All Semesters'),
-                          ),
-                          ...semesters.map((sem) => DropdownMenuItem(
-                                value: sem,
-                                child: Text(sem.toString()),
-                              )),
-                        ],
-                        onChanged: (value) {
-                          setState(() {
-                            selectedSemester = value;
-                            filterStudents();
-                          });
-                        },
+                    items: [
+                      const DropdownMenuItem(
+                        value: null,
+                        child: Text('All Departments'),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  value: selectedRegStatus,
-                  decoration: const InputDecoration(
-                    labelText: 'Registration Status',
-                    border: OutlineInputBorder(),
+                      ...departments.map((dept) => DropdownMenuItem(
+                            value: dept,
+                            child: Text(dept),
+                          )),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        selectedDepartment = value;
+                        filterStudents();
+                      });
+                    },
                   ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: null,
-                      child: Text('All Status'),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<int>(
+                    value: selectedSemester,
+                    decoration: const InputDecoration(
+                      labelText: 'Semester',
+                      border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     ),
-                    DropdownMenuItem(
-                      value: 'Regular',
-                      child: Text('Regular Students'),
+                    items: [
+                      const DropdownMenuItem(
+                        value: null,
+                        child: Text('All Semesters'),
+                      ),
+                      ...semesters.map((sem) => DropdownMenuItem(
+                            value: sem,
+                            child: Text(sem.toString()),
+                          )),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        selectedSemester = value;
+                        filterStudents();
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: selectedRegStatus,
+                    decoration: const InputDecoration(
+                      labelText: 'Registration Status',
+                      border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     ),
-                    DropdownMenuItem(
-                      value: 'Backlog',
-                      child: Text('Students with Backlogs'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: null,
+                        child: Text('All Status'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Regular',
+                        child: Text('Regular Students'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Backlog',
+                        child: Text('Students with Backlogs'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        selectedRegStatus = value;
+                        filterStudents();
+                      });
+                    },
+                  ),
+                ] else ...[
+                  // Desktop layout for filters
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          value: selectedDepartment,
+                          decoration: const InputDecoration(
+                            labelText: 'Department',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: [
+                            const DropdownMenuItem(
+                              value: null,
+                              child: Text('All Departments'),
+                            ),
+                            ...departments.map((dept) => DropdownMenuItem(
+                                  value: dept,
+                                  child: Text(dept),
+                                )),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              selectedDepartment = value;
+                              filterStudents();
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: selectedSemester,
+                          decoration: const InputDecoration(
+                            labelText: 'Semester',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: [
+                            const DropdownMenuItem(
+                              value: null,
+                              child: Text('All Semesters'),
+                            ),
+                            ...semesters.map((sem) => DropdownMenuItem(
+                                  value: sem,
+                                  child: Text(sem.toString()),
+                                )),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              selectedSemester = value;
+                              filterStudents();
+                            });
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: selectedRegStatus,
+                    decoration: const InputDecoration(
+                      labelText: 'Registration Status',
+                      border: OutlineInputBorder(),
                     ),
-                  ],
-                  onChanged: (value) {
-                    setState(() {
-                      selectedRegStatus = value;
-                      filterStudents();
-                    });
-                  },
-                ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: null,
+                        child: Text('All Status'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Regular',
+                        child: Text('Regular Students'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Backlog',
+                        child: Text('Students with Backlogs'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        selectedRegStatus = value;
+                        filterStudents();
+                      });
+                    },
+                  ),
+                ],
               ],
             ),
           ),
@@ -786,97 +874,149 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
 
                           return Card(
                             margin: const EdgeInsets.only(bottom: 8),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                ListTile(
-                                  title: Row(
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Expanded(
-                                        child: Text(student['student_name']),
-                                      ),
-                                      if (courses.isNotEmpty) ...[
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: hasBacklogs
-                                                ? Colors.orange.withOpacity(0.1)
-                                                : Colors.green.withOpacity(0.1),
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                            border: Border.all(
-                                              color: hasBacklogs
-                                                  ? Colors.orange
-                                                  : Colors.green,
-                                            ),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                hasBacklogs
-                                                    ? Icons.warning
-                                                    : Icons.check_circle,
-                                                size: 16,
-                                                color: hasBacklogs
-                                                    ? Colors.orange
-                                                    : Colors.green,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              student['student_name'],
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
                                               ),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                hasBacklogs
-                                                    ? '${courses.where((c) => c['is_reguler'] == false).length} Backlogs'
-                                                    : 'Regular',
-                                                style: TextStyle(
+                                            ),
+                                            const SizedBox(height: 4),
+                                            if (courses.isNotEmpty)
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 4,
+                                                ),
+                                                decoration: BoxDecoration(
                                                   color: hasBacklogs
                                                       ? Colors.orange
-                                                      : Colors.green,
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.bold,
+                                                          .withOpacity(0.1)
+                                                      : Colors.green
+                                                          .withOpacity(0.1),
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                  border: Border.all(
+                                                    color: hasBacklogs
+                                                        ? Colors.orange
+                                                        : Colors.green,
+                                                  ),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Icon(
+                                                      hasBacklogs
+                                                          ? Icons.warning
+                                                          : Icons.check_circle,
+                                                      size: 14,
+                                                      color: hasBacklogs
+                                                          ? Colors.orange
+                                                          : Colors.green,
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      hasBacklogs
+                                                          ? '${courses.where((c) => c['is_reguler'] == false).length} Backlogs'
+                                                          : 'Regular',
+                                                      style: TextStyle(
+                                                        color: hasBacklogs
+                                                            ? Colors.orange
+                                                            : Colors.green,
+                                                        fontSize: 12,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
-                                            ],
-                                          ),
+                                          ],
                                         ),
-                                      ],
+                                      ),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.menu_book),
+                                            tooltip: 'View Courses',
+                                            onPressed: () =>
+                                                _viewStudentCourses(
+                                                    student['student_reg_no']),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(
+                                              minWidth: 32,
+                                              minHeight: 32,
+                                            ),
+                                            iconSize: 18,
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.edit),
+                                            tooltip: 'Edit Student',
+                                            onPressed: () => _addEditStudent(
+                                                student: student),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(
+                                              minWidth: 32,
+                                              minHeight: 32,
+                                            ),
+                                            iconSize: 18,
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.delete,
+                                                color: Colors.red),
+                                            tooltip: 'Delete Student',
+                                            onPressed: () => _deleteStudent(
+                                                student['student_reg_no']),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(
+                                              minWidth: 32,
+                                              minHeight: 32,
+                                            ),
+                                            iconSize: 18,
+                                          ),
+                                        ],
+                                      ),
                                     ],
                                   ),
-                                  subtitle: Text(
-                                    'Reg No: ${student['student_reg_no']}\n'
-                                    'Department: ${student['dept_id']}\n'
-                                    'Semester: ${student['semester']}\n'
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Reg No: ${student['student_reg_no']}',
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Department: ${student['dept_id']}',
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Semester: ${student['semester']}',
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
                                     'Total Courses: ${courses.length}${hasBacklogs ? ' (${courses.where((c) => c['is_reguler'] == true).length} Regular)' : ''}',
+                                    style: const TextStyle(fontSize: 13),
                                   ),
-                                  isThreeLine: true,
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.menu_book),
-                                        tooltip: 'View Courses',
-                                        onPressed: () => _viewStudentCourses(
-                                            student['student_reg_no']),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.edit),
-                                        tooltip: 'Edit Student',
-                                        onPressed: () =>
-                                            _addEditStudent(student: student),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.delete,
-                                            color: Colors.red),
-                                        tooltip: 'Delete Student',
-                                        onPressed: () => _deleteStudent(
-                                            student['student_reg_no']),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           );
                         },

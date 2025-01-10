@@ -1,0 +1,1 @@
+[33mcc34291[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m Enhanced faculty management: - Added filtering by department and availability - Improved faculty status display - Added CSV import functionality - Fixed context and mounted issues

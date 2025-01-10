@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'faculty_management_page.dart';
 import 'student_management_page.dart';
 import 'course_management_page.dart';
 import 'department_management_page.dart';
-import 'package:office_pal/features/superintendent/presentation/pages/faculty_management_page.dart';
 import 'dart:convert';
 import 'dart:developer' as developer;
 
@@ -20,7 +20,7 @@ class _SuperintendentDashboardPageState
     extends ConsumerState<SuperintendentDashboardPage> {
   List<Map<String, dynamic>> notifications = [];
   bool isLoading = false;
-  Map<String, int> stats = {
+  Map<String, dynamic> stats = {
     'students': 0,
     'courses': 0,
     'departments': 0,
@@ -30,22 +30,28 @@ class _SuperintendentDashboardPageState
   @override
   void initState() {
     super.initState();
-    _loadNotifications();
-    _loadStats();
+    _loadData();
   }
 
-  Future<void> _loadStats() async {
+  Future<void> _loadData() async {
     setState(() => isLoading = true);
     try {
+      // Load notifications first
+      await _loadNotifications();
+
+      // Load stats
       final studentsCount = await Supabase.instance.client
           .from('student')
           .select('*', const FetchOptions(count: CountOption.exact));
+
       final coursesCount = await Supabase.instance.client
           .from('course')
           .select('*', const FetchOptions(count: CountOption.exact));
+
       final departmentsCount = await Supabase.instance.client
           .from('departments')
           .select('*', const FetchOptions(count: CountOption.exact));
+
       final facultyCount = await Supabase.instance.client
           .from('faculty')
           .select('*', const FetchOptions(count: CountOption.exact));
@@ -61,16 +67,58 @@ class _SuperintendentDashboardPageState
           isLoading = false;
         });
       }
-    } catch (e) {
-      developer.log('Error loading stats: $e');
+    } catch (error) {
+      developer.log('Error loading stats: $error');
       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading data: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
         setState(() => isLoading = false);
       }
     }
   }
 
+  void _navigateToManagement(String type) {
+    switch (type) {
+      case 'students':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const StudentManagementPage(),
+          ),
+        ).then((_) => _loadData()); // Reload data when returning
+        break;
+      case 'courses':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const CourseManagementPage(),
+          ),
+        ).then((_) => _loadData()); // Reload data when returning
+        break;
+      case 'departments':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const DepartmentManagementPage(),
+          ),
+        ).then((_) => _loadData()); // Reload data when returning
+        break;
+      case 'faculty':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const FacultyManagementPage(),
+          ),
+        ).then((_) => _loadData()); // Reload data when returning
+        break;
+    }
+  }
+
   Future<void> _loadNotifications() async {
-    setState(() => isLoading = true);
     try {
       final response = await Supabase.instance.client
           .from('notifications')
@@ -80,7 +128,6 @@ class _SuperintendentDashboardPageState
       if (mounted) {
         setState(() {
           notifications = List<Map<String, dynamic>>.from(response);
-          isLoading = false;
         });
       }
     } catch (error) {
@@ -91,7 +138,6 @@ class _SuperintendentDashboardPageState
             backgroundColor: Colors.red,
           ),
         );
-        setState(() => isLoading = false);
       }
     }
   }
@@ -265,102 +311,195 @@ class _SuperintendentDashboardPageState
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
-              onRefresh: () async {
-                await Future.wait([
-                  _loadNotifications(),
-                  _loadStats(),
-                ]);
-              },
+              onRefresh: _loadData,
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isSmallScreen ? 12.0 : 16.0,
+                  vertical: isSmallScreen ? 12.0 : 16.0,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Quick Stats',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4.0),
+                      child: Text(
+                        'Quick Stats',
+                        style: TextStyle(
+                          fontSize: isSmallScreen ? 20 : 24,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    _StatsGrid(isSmallScreen: isSmallScreen),
-                    const SizedBox(height: 32),
-                    const Divider(height: 1),
-                    const SizedBox(height: 32),
-                    const Text(
-                      'Management Tools',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
+                    const SizedBox(height: 12),
+                    if (isSmallScreen)
+                      GridView.count(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 8,
+                        crossAxisSpacing: 8,
+                        childAspectRatio: 1.2,
+                        children: [
+                          _DashboardCard(
+                            title: 'Students',
+                            value: stats['students'].toString(),
+                            icon: Icons.people,
+                            color: Colors.blue,
+                            onTap: () => _navigateToManagement('students'),
+                          ),
+                          _DashboardCard(
+                            title: 'Courses',
+                            value: stats['courses'].toString(),
+                            icon: Icons.book,
+                            color: Colors.green,
+                            onTap: () => _navigateToManagement('courses'),
+                          ),
+                          _DashboardCard(
+                            title: 'Departments',
+                            value: stats['departments'].toString(),
+                            icon: Icons.business,
+                            color: Colors.orange,
+                            onTap: () => _navigateToManagement('departments'),
+                          ),
+                          _DashboardCard(
+                            title: 'Faculty',
+                            value: stats['faculty'].toString(),
+                            icon: Icons.school,
+                            color: Colors.purple,
+                            onTap: () => _navigateToManagement('faculty'),
+                          ),
+                        ],
+                      )
+                    else
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _DashboardCard(
+                            title: 'Total Students',
+                            value: stats['students'].toString(),
+                            icon: Icons.people,
+                            color: Colors.blue,
+                            onTap: () => _navigateToManagement('students'),
+                          ),
+                          _DashboardCard(
+                            title: 'Total Courses',
+                            value: stats['courses'].toString(),
+                            icon: Icons.book,
+                            color: Colors.green,
+                            onTap: () => _navigateToManagement('courses'),
+                          ),
+                          _DashboardCard(
+                            title: 'Departments',
+                            value: stats['departments'].toString(),
+                            icon: Icons.business,
+                            color: Colors.orange,
+                            onTap: () => _navigateToManagement('departments'),
+                          ),
+                          _DashboardCard(
+                            title: 'Faculty Members',
+                            value: stats['faculty'].toString(),
+                            icon: Icons.school,
+                            color: Colors.purple,
+                            onTap: () => _navigateToManagement('faculty'),
+                          ),
+                        ],
+                      ),
+                    const SizedBox(height: 24),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4.0),
+                      child: Text(
+                        'Management Tools',
+                        style: TextStyle(
+                          fontSize: isSmallScreen ? 20 : 24,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    GridView.count(
-                      crossAxisCount: isSmallScreen ? 1 : 3,
-                      shrinkWrap: true,
-                      mainAxisSpacing: 16,
-                      crossAxisSpacing: 16,
-                      childAspectRatio: isSmallScreen ? 2.5 : 1.2,
-                      children: [
-                        _DashboardCard(
-                          title: 'Student Management',
-                          icon: Icons.people,
-                          description:
-                              'Manage student records and course registrations',
-                          color: Colors.blue,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  const StudentManagementPage(),
-                            ),
+                    const SizedBox(height: 12),
+                    if (isSmallScreen)
+                      ListView(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        children: [
+                          _ManagementCard(
+                            title: 'Student Management',
+                            description:
+                                'Manage student records and registrations',
+                            icon: Icons.people,
+                            color: Colors.blue,
+                            onTap: () => _navigateToManagement('students'),
                           ),
-                        ),
-                        _DashboardCard(
-                          title: 'Course Management',
-                          icon: Icons.book,
-                          description:
-                              'Manage courses, credits, and departments',
-                          color: Colors.green,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  const CourseManagementPage(),
-                            ),
+                          _ManagementCard(
+                            title: 'Course Management',
+                            description: 'Manage courses and credits',
+                            icon: Icons.book,
+                            color: Colors.green,
+                            onTap: () => _navigateToManagement('courses'),
                           ),
-                        ),
-                        _DashboardCard(
-                          title: 'Department Management',
-                          icon: Icons.business,
-                          description:
-                              'Manage departments and faculty assignments',
-                          color: Colors.orange,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  const DepartmentManagementPage(),
-                            ),
+                          _ManagementCard(
+                            title: 'Department Management',
+                            description: 'Manage departments and assignments',
+                            icon: Icons.business,
+                            color: Colors.orange,
+                            onTap: () => _navigateToManagement('departments'),
                           ),
-                        ),
-                        _DashboardCard(
-                          title: 'Faculty Management',
-                          icon: Icons.people_outline,
-                          description:
-                              'Manage faculty members and their status',
-                          color: Colors.purple,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  const FacultyManagementPage(),
-                            ),
+                          _ManagementCard(
+                            title: 'Faculty Management',
+                            description: 'Manage faculty and availability',
+                            icon: Icons.school,
+                            color: Colors.purple,
+                            onTap: () => _navigateToManagement('faculty'),
                           ),
-                        ),
-                      ],
-                    ),
+                        ]
+                            .map((card) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 8.0),
+                                  child: card,
+                                ))
+                            .toList(),
+                      )
+                    else
+                      GridView.count(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisCount: 3,
+                        mainAxisSpacing: 16,
+                        crossAxisSpacing: 16,
+                        children: [
+                          _ManagementCard(
+                            title: 'Student Management',
+                            description:
+                                'Manage student records and course registrations',
+                            icon: Icons.people,
+                            color: Colors.blue,
+                            onTap: () => _navigateToManagement('students'),
+                          ),
+                          _ManagementCard(
+                            title: 'Course Management',
+                            description:
+                                'Manage courses, credits, and departments',
+                            icon: Icons.book,
+                            color: Colors.green,
+                            onTap: () => _navigateToManagement('courses'),
+                          ),
+                          _ManagementCard(
+                            title: 'Department Management',
+                            description:
+                                'Manage departments and faculty assignments',
+                            icon: Icons.business,
+                            color: Colors.orange,
+                            onTap: () => _navigateToManagement('departments'),
+                          ),
+                          _ManagementCard(
+                            title: 'Faculty Management',
+                            description:
+                                'Manage faculty members and their availability',
+                            icon: Icons.school,
+                            color: Colors.purple,
+                            onTap: () => _navigateToManagement('faculty'),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
               ),
@@ -559,57 +698,168 @@ class _SuperintendentDashboardPageState
 
 class _DashboardCard extends StatelessWidget {
   final String title;
+  final String value;
   final IconData icon;
-  final String description;
   final Color color;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _DashboardCard({
     required this.title,
+    required this.value,
     required this.icon,
+    required this.color,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    final isSmallScreen = screenSize.width < 600;
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      elevation: 2,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          width: isSmallScreen ? double.infinity : 200,
+          padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                color.withOpacity(0.1),
+                Colors.white,
+              ],
+            ),
+            border: Border(
+              left: BorderSide(color: color, width: 4),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: color, size: isSmallScreen ? 24 : 28),
+              const SizedBox(height: 8),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: isSmallScreen ? 28 : 32,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: isSmallScreen ? 13 : 14,
+                  color: Colors.grey[700],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ManagementCard extends StatelessWidget {
+  final String title;
+  final String description;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ManagementCard({
+    required this.title,
     required this.description,
+    required this.icon,
     required this.color,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                color.withOpacity(0.8),
-                color,
+    final isSmallScreen = MediaQuery.of(context).size.width < 600;
+
+    if (isSmallScreen) {
+      return Card(
+        elevation: 2,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, size: 24, color: color),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        description,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  color: Colors.grey[400],
+                ),
               ],
             ),
           ),
+        ),
+      );
+    }
+
+    return Card(
+      elevation: 2,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                icon,
-                size: 48,
-                color: Colors.white,
-              ),
+              Icon(icon, size: 48, color: color),
               const SizedBox(height: 16),
               Text(
                 title,
                 style: const TextStyle(
-                  fontSize: 20,
+                  fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: Colors.white,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -618,7 +868,7 @@ class _DashboardCard extends StatelessWidget {
                 description,
                 style: TextStyle(
                   fontSize: 14,
-                  color: Colors.white.withOpacity(0.9),
+                  color: Colors.grey[600],
                 ),
                 textAlign: TextAlign.center,
                 maxLines: 2,
@@ -626,192 +876,6 @@ class _DashboardCard extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _StatsGrid extends ConsumerStatefulWidget {
-  final bool isSmallScreen;
-
-  const _StatsGrid({required this.isSmallScreen});
-
-  @override
-  ConsumerState<_StatsGrid> createState() => _StatsGridState();
-}
-
-class _StatsGridState extends ConsumerState<_StatsGrid> {
-  bool isLoading = true;
-  Map<String, int> stats = {
-    'students': 0,
-    'courses': 0,
-    'departments': 0,
-    'faculty': 0,
-  };
-
-  @override
-  void initState() {
-    super.initState();
-    _loadStats();
-  }
-
-  Future<void> _loadStats() async {
-    try {
-      final studentsCount = await Supabase.instance.client
-          .from('student')
-          .select('*', const FetchOptions(count: CountOption.exact));
-      final coursesCount = await Supabase.instance.client
-          .from('course')
-          .select('*', const FetchOptions(count: CountOption.exact));
-      final departmentsCount = await Supabase.instance.client
-          .from('departments')
-          .select('*', const FetchOptions(count: CountOption.exact));
-      final facultyCount = await Supabase.instance.client
-          .from('faculty')
-          .select('*', const FetchOptions(count: CountOption.exact));
-
-      if (mounted) {
-        setState(() {
-          stats = {
-            'students': studentsCount.count ?? 0,
-            'courses': coursesCount.count ?? 0,
-            'departments': departmentsCount.count ?? 0,
-            'faculty': facultyCount.count ?? 0,
-          };
-          isLoading = false;
-        });
-      }
-    } catch (e) {
-      developer.log('Error loading stats: $e');
-      if (mounted) {
-        setState(() => isLoading = false);
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: widget.isSmallScreen ? 2 : 4,
-      shrinkWrap: true,
-      mainAxisSpacing: 16,
-      crossAxisSpacing: 16,
-      childAspectRatio: widget.isSmallScreen ? 1.5 : 1.8,
-      children: [
-        _StatCard(
-          title: 'Total Students',
-          value: stats['students'] ?? 0,
-          icon: Icons.people,
-          color: Colors.blue,
-          isLoading: isLoading,
-        ),
-        _StatCard(
-          title: 'Total Courses',
-          value: stats['courses'] ?? 0,
-          icon: Icons.book,
-          color: Colors.green,
-          isLoading: isLoading,
-        ),
-        _StatCard(
-          title: 'Departments',
-          value: stats['departments'] ?? 0,
-          icon: Icons.business,
-          color: Colors.orange,
-          isLoading: isLoading,
-        ),
-        _StatCard(
-          title: 'Faculty Members',
-          value: stats['faculty'] ?? 0,
-          icon: Icons.people_outline,
-          color: Colors.purple,
-          isLoading: isLoading,
-        ),
-      ],
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  final String title;
-  final int value;
-  final IconData icon;
-  final Color color;
-  final bool isLoading;
-
-  const _StatCard({
-    required this.title,
-    required this.value,
-    required this.icon,
-    required this.color,
-    required this.isLoading,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              color.withOpacity(0.1),
-              color.withOpacity(0.05),
-            ],
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                icon,
-                size: 32,
-                color: color,
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (isLoading)
-              SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(color),
-                ),
-              )
-            else
-              Text(
-                value.toString(),
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-              ),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: color.withOpacity(0.8),
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
         ),
       ),
     );

@@ -6,6 +6,7 @@ import 'student_management_page.dart';
 import 'course_management_page.dart';
 import 'department_management_page.dart';
 import 'hall_management_page.dart';
+import 'exam_management_page.dart';
 import 'dart:convert';
 import 'dart:developer' as developer;
 
@@ -38,19 +39,16 @@ class _SuperintendentDashboardPageState
   Future<void> _loadData() async {
     setState(() => isLoading = true);
     try {
-      // Load notifications first
-      await _loadNotifications();
-
-      // Load stats
-      final studentsCount = await Supabase.instance.client
+      // Load statistics
+      final studentCount = await Supabase.instance.client
           .from('student')
           .select('*', const FetchOptions(count: CountOption.exact));
 
-      final coursesCount = await Supabase.instance.client
+      final courseCount = await Supabase.instance.client
           .from('course')
           .select('*', const FetchOptions(count: CountOption.exact));
 
-      final departmentsCount = await Supabase.instance.client
+      final departmentCount = await Supabase.instance.client
           .from('departments')
           .select('*', const FetchOptions(count: CountOption.exact));
 
@@ -58,24 +56,37 @@ class _SuperintendentDashboardPageState
           .from('faculty')
           .select('*', const FetchOptions(count: CountOption.exact));
 
-      final hallsCount = await Supabase.instance.client
+      final hallCount = await Supabase.instance.client
           .from('hall')
           .select('*', const FetchOptions(count: CountOption.exact));
+
+      final examCount = await Supabase.instance.client
+          .from('exam')
+          .select('*', const FetchOptions(count: CountOption.exact));
+
+      // Load notifications
+      final notificationsResponse = await Supabase.instance.client
+          .from('notifications')
+          .select()
+          .order('created_at', ascending: false);
 
       if (mounted) {
         setState(() {
           stats = {
-            'students': studentsCount.count ?? 0,
-            'courses': coursesCount.count ?? 0,
-            'departments': departmentsCount.count ?? 0,
+            'students': studentCount.count ?? 0,
+            'courses': courseCount.count ?? 0,
+            'departments': departmentCount.count ?? 0,
             'faculty': facultyCount.count ?? 0,
-            'halls': hallsCount.count ?? 0,
+            'halls': hallCount.count ?? 0,
+            'exams': examCount.count ?? 0,
           };
+          notifications =
+              List<Map<String, dynamic>>.from(notificationsResponse);
           isLoading = false;
         });
       }
     } catch (error) {
-      developer.log('Error loading stats: $error');
+      developer.log('Error loading data: $error');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -127,6 +138,14 @@ class _SuperintendentDashboardPageState
           context,
           MaterialPageRoute(
             builder: (context) => const HallManagementPage(),
+          ),
+        ).then((_) => _loadData()); // Reload data when returning
+        break;
+      case 'exams':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const ExamManagementPage(),
           ),
         ).then((_) => _loadData()); // Reload data when returning
         break;
@@ -277,6 +296,36 @@ class _SuperintendentDashboardPageState
     }
   }
 
+  Widget _buildStatCard(String title, int value, IconData icon) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 32),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value.toString(),
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
@@ -396,6 +445,13 @@ class _SuperintendentDashboardPageState
                             color: Colors.teal,
                             onTap: () => _navigateToManagement('halls'),
                           ),
+                          _DashboardCard(
+                            title: 'Exams',
+                            value: stats['exams'].toString(),
+                            icon: Icons.assignment,
+                            color: Colors.pink,
+                            onTap: () => _navigateToManagement('exams'),
+                          ),
                         ],
                       )
                     else
@@ -437,6 +493,13 @@ class _SuperintendentDashboardPageState
                             icon: Icons.meeting_room,
                             color: Colors.teal,
                             onTap: () => _navigateToManagement('halls'),
+                          ),
+                          _DashboardCard(
+                            title: 'Exams',
+                            value: stats['exams'].toString(),
+                            icon: Icons.assignment,
+                            color: Colors.pink,
+                            onTap: () => _navigateToManagement('exams'),
                           ),
                         ],
                       ),
@@ -494,6 +557,13 @@ class _SuperintendentDashboardPageState
                             color: Colors.teal,
                             onTap: () => _navigateToManagement('halls'),
                           ),
+                          _ManagementCard(
+                            title: 'Exam Management',
+                            description: 'Manage exams and schedules',
+                            icon: Icons.assignment,
+                            color: Colors.pink,
+                            onTap: () => _navigateToManagement('exams'),
+                          ),
                         ]
                             .map((card) => Padding(
                                   padding: const EdgeInsets.only(bottom: 8.0),
@@ -548,6 +618,13 @@ class _SuperintendentDashboardPageState
                             icon: Icons.meeting_room,
                             color: Colors.teal,
                             onTap: () => _navigateToManagement('halls'),
+                          ),
+                          _ManagementCard(
+                            title: 'Exam Management',
+                            description: 'Manage exams and schedules',
+                            icon: Icons.assignment,
+                            color: Colors.pink,
+                            onTap: () => _navigateToManagement('exams'),
                           ),
                         ],
                       ),

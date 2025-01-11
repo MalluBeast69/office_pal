@@ -9,9 +9,9 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Supabase.initialize(
-    url: 'https://yirgzuoqhccmkcqmzoji.supabase.co',
+    url: 'https://fnxirlpiqciezifongxb.supabase.co',
     anonKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlpcmd6dW9xaGNjbWtjcW16b2ppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDI5NzM2NzgsImV4cCI6MjAxODU0OTY3OH0.Hs_SV-BqXwPDjxPo_5bZGDXAb6EEyBhPjDQCKHE3Yt0',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZueGlybHBpcWNpZXppZm9uZ3hiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzYzNjIxMzgsImV4cCI6MjA1MTkzODEzOH0.qbqwZJr9ufNbs3mjQHFuJMNlef-mUwBNoCaoeuHDGhM',
   );
 
   runApp(const ProviderScope(child: MyApp()));
@@ -54,13 +54,11 @@ class _MyAppState extends ConsumerState<MyApp> {
           : StreamBuilder<AuthState>(
               stream: Supabase.instance.client.auth.onAuthStateChange,
               builder: (context, snapshot) {
-                if (snapshot.hasData) {
-                  final session = snapshot.data!.session;
-                  if (session != null) {
-                    return const SuperintendentDashboardPage();
-                  }
+                // Always go to login page first after restart
+                if (!snapshot.hasData || snapshot.data?.session == null) {
+                  return const LoginPage();
                 }
-                return const LoginPage();
+                return const SuperintendentDashboardPage();
               },
             ),
     );

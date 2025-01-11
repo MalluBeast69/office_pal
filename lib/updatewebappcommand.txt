@@ -1,0 +1,6 @@
+   flutter build web --release --base-href "/office_pal/"
+   git checkout gh-pages
+   xcopy /E /I build\web .
+   git add .
+   git commit -m "Update web app"
+   git push origin gh-pages

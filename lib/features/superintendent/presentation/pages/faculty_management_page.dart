@@ -461,7 +461,7 @@ class _FacultyManagementPageState extends ConsumerState<FacultyManagementPage> {
                                         value: dept['dept_id'],
                                         child: Text(dept['dept_name']),
                                       );
-                                    }).toList(),
+                                    }),
                                   ],
                                   onChanged: (value) {
                                     setState(() {

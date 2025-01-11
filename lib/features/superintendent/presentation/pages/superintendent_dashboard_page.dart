@@ -5,6 +5,7 @@ import 'faculty_management_page.dart';
 import 'student_management_page.dart';
 import 'course_management_page.dart';
 import 'department_management_page.dart';
+import 'hall_management_page.dart';
 import 'dart:convert';
 import 'dart:developer' as developer;
 
@@ -25,6 +26,7 @@ class _SuperintendentDashboardPageState
     'courses': 0,
     'departments': 0,
     'faculty': 0,
+    'halls': 0,
   };
 
   @override
@@ -56,6 +58,10 @@ class _SuperintendentDashboardPageState
           .from('faculty')
           .select('*', const FetchOptions(count: CountOption.exact));
 
+      final hallsCount = await Supabase.instance.client
+          .from('hall')
+          .select('*', const FetchOptions(count: CountOption.exact));
+
       if (mounted) {
         setState(() {
           stats = {
@@ -63,6 +69,7 @@ class _SuperintendentDashboardPageState
             'courses': coursesCount.count ?? 0,
             'departments': departmentsCount.count ?? 0,
             'faculty': facultyCount.count ?? 0,
+            'halls': hallsCount.count ?? 0,
           };
           isLoading = false;
         });
@@ -115,6 +122,14 @@ class _SuperintendentDashboardPageState
           ),
         ).then((_) => _loadData()); // Reload data when returning
         break;
+      case 'halls':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const HallManagementPage(),
+          ),
+        ).then((_) => _loadData()); // Reload data when returning
+        break;
     }
   }
 
@@ -163,26 +178,32 @@ class _SuperintendentDashboardPageState
         }
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Request ${status.toUpperCase()}'),
-          backgroundColor: Colors.green,
-          action: SnackBarAction(
-            label: 'Delete',
-            textColor: Colors.white,
-            onPressed: () => _showDeleteConfirmation(notification),
+      // Reload all data
+      await _loadData();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Request ${status.toUpperCase()}'),
+            backgroundColor: Colors.green,
+            action: SnackBarAction(
+              label: 'Delete',
+              textColor: Colors.white,
+              onPressed: () => _showDeleteConfirmation(notification),
+            ),
           ),
-        ),
-      );
-      _loadNotifications();
+        );
+      }
     } catch (error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error updating status: $error'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      setState(() => isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error updating status: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => isLoading = false);
+      }
     }
   }
 
@@ -368,6 +389,13 @@ class _SuperintendentDashboardPageState
                             color: Colors.purple,
                             onTap: () => _navigateToManagement('faculty'),
                           ),
+                          _DashboardCard(
+                            title: 'Halls',
+                            value: stats['halls'].toString(),
+                            icon: Icons.meeting_room,
+                            color: Colors.teal,
+                            onTap: () => _navigateToManagement('halls'),
+                          ),
                         ],
                       )
                     else
@@ -402,6 +430,13 @@ class _SuperintendentDashboardPageState
                             icon: Icons.school,
                             color: Colors.purple,
                             onTap: () => _navigateToManagement('faculty'),
+                          ),
+                          _DashboardCard(
+                            title: 'Halls',
+                            value: stats['halls'].toString(),
+                            icon: Icons.meeting_room,
+                            color: Colors.teal,
+                            onTap: () => _navigateToManagement('halls'),
                           ),
                         ],
                       ),
@@ -451,6 +486,14 @@ class _SuperintendentDashboardPageState
                             color: Colors.purple,
                             onTap: () => _navigateToManagement('faculty'),
                           ),
+                          _ManagementCard(
+                            title: 'Hall Management',
+                            description:
+                                'Manage halls, seating arrangements and availability',
+                            icon: Icons.meeting_room,
+                            color: Colors.teal,
+                            onTap: () => _navigateToManagement('halls'),
+                          ),
                         ]
                             .map((card) => Padding(
                                   padding: const EdgeInsets.only(bottom: 8.0),
@@ -497,6 +540,14 @@ class _SuperintendentDashboardPageState
                             icon: Icons.school,
                             color: Colors.purple,
                             onTap: () => _navigateToManagement('faculty'),
+                          ),
+                          _ManagementCard(
+                            title: 'Hall Management',
+                            description:
+                                'Manage halls, seating arrangements and availability',
+                            icon: Icons.meeting_room,
+                            color: Colors.teal,
+                            onTap: () => _navigateToManagement('halls'),
                           ),
                         ],
                       ),
@@ -646,10 +697,12 @@ class _SuperintendentDashboardPageState
                                                 Icons.check_circle_outline,
                                                 color: Colors.green,
                                               ),
-                                              onPressed: () {
-                                                _updateNotificationStatus(
+                                              onPressed: () async {
+                                                await _updateNotificationStatus(
                                                     notification, 'approved');
-                                                Navigator.pop(context);
+                                                if (mounted) {
+                                                  Navigator.pop(context);
+                                                }
                                               },
                                             ),
                                             IconButton(
@@ -657,10 +710,12 @@ class _SuperintendentDashboardPageState
                                                 Icons.cancel_outlined,
                                                 color: Colors.red,
                                               ),
-                                              onPressed: () {
-                                                _updateNotificationStatus(
+                                              onPressed: () async {
+                                                await _updateNotificationStatus(
                                                     notification, 'declined');
-                                                Navigator.pop(context);
+                                                if (mounted) {
+                                                  Navigator.pop(context);
+                                                }
                                               },
                                             ),
                                           ],

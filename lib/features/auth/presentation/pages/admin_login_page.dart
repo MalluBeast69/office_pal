@@ -2,117 +2,59 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:loading_animation_widget/loading_animation_widget.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:office_pal/features/faculty/presentation/pages/faculty_dashboard_page.dart';
-import 'package:office_pal/features/auth/presentation/pages/admin_login_page.dart';
 
-enum LoginMode { student, faculty }
+enum AdminLoginMode { superintendent, controller }
 
-class LoginPage extends ConsumerStatefulWidget {
-  const LoginPage({super.key});
+class AdminLoginPage extends ConsumerStatefulWidget {
+  const AdminLoginPage({super.key});
 
   @override
-  ConsumerState<LoginPage> createState() => _LoginPageState();
+  ConsumerState<AdminLoginPage> createState() => _AdminLoginPageState();
 }
 
-class _LoginPageState extends ConsumerState<LoginPage> {
+class _AdminLoginPageState extends ConsumerState<AdminLoginPage> {
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
   bool _isObscured = true;
-  LoginMode _loginMode = LoginMode.student;
-  final _idController = TextEditingController();
+  AdminLoginMode _loginMode = AdminLoginMode.superintendent;
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
   @override
   void dispose() {
-    _idController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
-  }
-
-  String get _getIdLabel {
-    return _loginMode == LoginMode.student
-        ? 'Registration Number'
-        : 'Faculty ID';
   }
 
   Future<void> _signIn() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final id = _idController.text.trim();
-    final password = _passwordController.text.trim();
-
-    // Check if password matches ID for students and faculty
-    if (id != password) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              _loginMode == LoginMode.student
-                  ? 'Registration number and password must be the same'
-                  : 'Faculty ID and password must be the same',
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return;
-    }
-
     setState(() => _isLoading = true);
 
     try {
-      // Query the appropriate table based on login mode
-      final table = _loginMode == LoginMode.student ? 'student' : 'faculty';
-      final idField =
-          _loginMode == LoginMode.student ? 'student_reg_no' : 'faculty_id';
-      final nameField =
-          _loginMode == LoginMode.student ? 'student_name' : 'faculty_name';
+      final email = _emailController.text.trim();
+      final password = _passwordController.text;
 
-      final query = Supabase.instance.client
-          .from(table)
-          .select(
-              '$nameField, dept_id${_loginMode == LoginMode.student ? ", semester" : ""}')
-          .eq(idField, id.toUpperCase());
+      await Supabase.instance.client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
 
-      final data = await query.single();
-
-      if (mounted && data != null) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Welcome ${data[nameField]}!'),
+          const SnackBar(
+            content: Text('Login successful!'),
             backgroundColor: Colors.green,
           ),
         );
-
-        if (_loginMode == LoginMode.faculty) {
-          if (mounted) {
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(
-                builder: (context) => FacultyDashboardPage(
-                  facultyId: id.toUpperCase(),
-                  facultyName: data['faculty_name'],
-                  departmentId: data['dept_id'],
-                ),
-              ),
-            );
-          }
-        } else {
-          // TODO: Navigate to student dashboard when implemented
-        }
+        Navigator.of(context).pop(); // Return to main flow for redirection
       }
-    } on PostgrestException catch (error) {
+    } on AuthException catch (error) {
       if (mounted) {
-        String errorMessage;
-        if (error.code == 'PGRST116') {
-          errorMessage = _loginMode == LoginMode.student
-              ? 'Invalid registration number'
-              : 'Invalid faculty ID';
-        } else {
-          errorMessage = 'Database error occurred';
-        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(errorMessage),
+            content: Text(error.message),
             backgroundColor: Colors.red,
           ),
         );
@@ -136,6 +78,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Admin Login'),
+        centerTitle: true,
+      ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
@@ -146,7 +92,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Text(
-                  'Welcome Back!',
+                  'Admin Login',
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
@@ -156,41 +102,45 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 const SizedBox(height: 32),
                 // Login mode toggle
                 Center(
-                  child: SegmentedButton<LoginMode>(
+                  child: SegmentedButton<AdminLoginMode>(
                     segments: const [
-                      ButtonSegment<LoginMode>(
-                        value: LoginMode.student,
-                        label: Text('Student'),
-                        icon: Icon(Icons.school),
+                      ButtonSegment<AdminLoginMode>(
+                        value: AdminLoginMode.superintendent,
+                        label: Text('Superintendent'),
+                        icon: Icon(Icons.admin_panel_settings),
                       ),
-                      ButtonSegment<LoginMode>(
-                        value: LoginMode.faculty,
-                        label: Text('Faculty'),
-                        icon: Icon(Icons.person_2),
+                      ButtonSegment<AdminLoginMode>(
+                        value: AdminLoginMode.controller,
+                        label: Text('Controller'),
+                        icon: Icon(Icons.manage_accounts),
                       ),
                     ],
                     selected: {_loginMode},
-                    onSelectionChanged: (Set<LoginMode> newSelection) {
+                    onSelectionChanged: (Set<AdminLoginMode> newSelection) {
                       setState(() {
                         _loginMode = newSelection.first;
-                        _clearForm();
+                        _emailController.clear();
+                        _passwordController.clear();
                       });
                     },
                   ),
                 ),
                 const SizedBox(height: 32),
                 TextFormField(
-                  controller: _idController,
+                  controller: _emailController,
                   decoration: InputDecoration(
-                    labelText: _getIdLabel,
-                    prefixIcon: const Icon(Icons.person_outline),
+                    labelText: 'Email',
+                    prefixIcon: const Icon(Icons.email_outlined),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
-                      return 'Please enter your ${_getIdLabel.toLowerCase()}';
+                      return 'Please enter your email';
+                    }
+                    if (!value.contains('@')) {
+                      return 'Please enter a valid email';
                     }
                     return null;
                   },
@@ -242,36 +192,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           ),
                   ),
                 ),
-                const SizedBox(height: 24),
-                Center(
-                  child: TextButton.icon(
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => const AdminLoginPage(),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.admin_panel_settings),
-                    label: const Text(
-                      'Login as Controller or Superintendent',
-                      style: TextStyle(
-                        fontSize: 14,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
         ),
       ),
     );
-  }
-
-  void _clearForm() {
-    _idController.clear();
-    _passwordController.clear();
   }
 }

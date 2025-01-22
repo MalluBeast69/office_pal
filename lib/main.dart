@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:loading_animation_widget/loading_animation_widget.dart';
 import 'features/auth/presentation/pages/login_page.dart';
 import 'features/superintendent/presentation/pages/superintendent_dashboard_page.dart';
+import 'features/controller/presentation/pages/controller_dashboard_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,6 +14,9 @@ void main() async {
     anonKey:
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZueGlybHBpcWNpZXppZm9uZ3hiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzYzNjIxMzgsImV4cCI6MjA1MTkzODEzOH0.qbqwZJr9ufNbs3mjQHFuJMNlef-mUwBNoCaoeuHDGhM',
   );
+
+  // Sign out on app start to prevent auto-login
+  await Supabase.instance.client.auth.signOut();
 
   runApp(const ProviderScope(child: MyApp()));
 }
@@ -44,6 +48,7 @@ class _MyAppState extends ConsumerState<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       title: 'Office Pal',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
@@ -54,11 +59,24 @@ class _MyAppState extends ConsumerState<MyApp> {
           : StreamBuilder<AuthState>(
               stream: Supabase.instance.client.auth.onAuthStateChange,
               builder: (context, snapshot) {
-                // Always go to login page first after restart
                 if (!snapshot.hasData || snapshot.data?.session == null) {
                   return const LoginPage();
                 }
-                return const SuperintendentDashboardPage();
+
+                final userEmail =
+                    snapshot.data?.session?.user.email?.toLowerCase();
+
+                if (userEmail == null) {
+                  return const LoginPage();
+                }
+
+                if (userEmail.contains('superintendent')) {
+                  return const SuperintendentDashboardPage();
+                } else if (userEmail.contains('controller')) {
+                  return const ControllerDashboardPage();
+                }
+
+                return const LoginPage();
               },
             ),
     );

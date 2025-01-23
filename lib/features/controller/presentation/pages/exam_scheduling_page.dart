@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:office_pal/features/controller/domain/models/course.dart';
+import 'package:office_pal/features/controller/presentation/widgets/exam_scheduling_dialog.dart';
 
 enum ExamType { internal, external }
 
@@ -115,12 +116,24 @@ class _ExamSchedulingPageState extends ConsumerState<ExamSchedulingPage> {
         actions: [
           if (selectedCourses.isNotEmpty)
             TextButton.icon(
-              onPressed: () {
-                // TODO: Implement final scheduling
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text('Scheduling will be implemented soon')),
+              onPressed: () async {
+                final exams = await showDialog(
+                  context: context,
+                  builder: (context) => ExamSchedulingDialog(
+                    selectedCourses: selectedCourses,
+                  ),
                 );
+
+                if (exams != null) {
+                  // TODO: Save exams to database
+                  print('Exams scheduled: $exams');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Exams scheduled successfully'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
               },
               icon: const Icon(Icons.check),
               label: Text('Schedule (${selectedCourses.length})'),

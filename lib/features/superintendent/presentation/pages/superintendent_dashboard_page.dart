@@ -40,29 +40,23 @@ class _SuperintendentDashboardPageState
     setState(() => isLoading = true);
     try {
       // Load statistics
-      final studentCount = await Supabase.instance.client
-          .from('student')
-          .select('*', const FetchOptions(count: CountOption.exact));
+      final studentCount =
+          await Supabase.instance.client.from('student').select().count();
 
-      final courseCount = await Supabase.instance.client
-          .from('course')
-          .select('*', const FetchOptions(count: CountOption.exact));
+      final courseCount =
+          await Supabase.instance.client.from('course').select().count();
 
-      final departmentCount = await Supabase.instance.client
-          .from('departments')
-          .select('*', const FetchOptions(count: CountOption.exact));
+      final departmentCount =
+          await Supabase.instance.client.from('departments').select().count();
 
-      final facultyCount = await Supabase.instance.client
-          .from('faculty')
-          .select('*', const FetchOptions(count: CountOption.exact));
+      final facultyCount =
+          await Supabase.instance.client.from('faculty').select().count();
 
-      final hallCount = await Supabase.instance.client
-          .from('hall')
-          .select('*', const FetchOptions(count: CountOption.exact));
+      final hallCount =
+          await Supabase.instance.client.from('hall').select().count();
 
-      final examCount = await Supabase.instance.client
-          .from('exam')
-          .select('*', const FetchOptions(count: CountOption.exact));
+      final examCount =
+          await Supabase.instance.client.from('exam').select().count();
 
       // Load notifications
       final notificationsResponse = await Supabase.instance.client
@@ -73,12 +67,12 @@ class _SuperintendentDashboardPageState
       if (mounted) {
         setState(() {
           stats = {
-            'students': studentCount.count ?? 0,
-            'courses': courseCount.count ?? 0,
-            'departments': departmentCount.count ?? 0,
-            'faculty': facultyCount.count ?? 0,
-            'halls': hallCount.count ?? 0,
-            'exams': examCount.count ?? 0,
+            'students': studentCount ?? 0,
+            'courses': courseCount ?? 0,
+            'departments': departmentCount ?? 0,
+            'faculty': facultyCount ?? 0,
+            'halls': hallCount ?? 0,
+            'exams': examCount ?? 0,
           };
           notifications =
               List<Map<String, dynamic>>.from(notificationsResponse);

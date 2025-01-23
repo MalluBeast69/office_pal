@@ -5,6 +5,9 @@ class Course {
   final int credit;
   final String courseType;
   final int semester;
+  final int examDuration;
+  final DateTime createdAt;
+  final DateTime updatedAt;
 
   Course({
     required this.courseCode,
@@ -13,6 +16,9 @@ class Course {
     required this.credit,
     required this.courseType,
     required this.semester,
+    required this.examDuration,
+    required this.createdAt,
+    required this.updatedAt,
   });
 
   factory Course.fromJson(Map<String, dynamic> json) {
@@ -25,6 +31,9 @@ class Course {
         credit: json['credit'] as int,
         courseType: json['course_type'] as String,
         semester: json['semester'] as int,
+        examDuration: json['exam_duration'] as int,
+        createdAt: DateTime.parse(json['created_at'] as String),
+        updatedAt: DateTime.parse(json['updated_at'] as String),
       );
     } catch (e) {
       print('Error creating Course from JSON: $e'); // Debug print
@@ -39,6 +48,9 @@ class Course {
         'credit': credit,
         'course_type': courseType,
         'semester': semester,
+        'exam_duration': examDuration,
+        'created_at': createdAt.toIso8601String(),
+        'updated_at': updatedAt.toIso8601String(),
       };
 
   @override

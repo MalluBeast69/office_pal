@@ -13,12 +13,18 @@ class ExamSchedulePreviewDialog extends StatelessWidget {
     required this.courses,
   });
 
-  Course _getCourse(String courseId) {
-    return courses.firstWhere((c) => c.courseCode == courseId);
+  Course? _getCourse(String courseId) {
+    try {
+      return courses.firstWhere((c) => c.courseCode == courseId);
+    } catch (e) {
+      return null;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final hasErrors = exams.any((exam) => _getCourse(exam.courseId) == null);
+
     return AlertDialog(
       title: const Text('Preview Exam Schedule'),
       content: SizedBox(
@@ -26,6 +32,28 @@ class ExamSchedulePreviewDialog extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (hasErrors)
+              Container(
+                padding: const EdgeInsets.all(8),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  border: Border.all(color: Colors.red.shade200),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.error_outline, color: Colors.red),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Some courses were not found in the database. Please check the course codes.',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             Flexible(
               child: SingleChildScrollView(
                 child: DataTable(
@@ -46,11 +74,20 @@ class ExamSchedulePreviewDialog extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(course.courseCode),
-                            Text(
-                              course.courseName,
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
+                            Text(exam.courseId),
+                            if (course != null)
+                              Text(
+                                course.courseName,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              )
+                            else
+                              Text(
+                                '(Course not found)',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: Colors.red),
+                              ),
                           ],
                         )),
                         DataCell(Column(
@@ -80,7 +117,7 @@ class ExamSchedulePreviewDialog extends StatelessWidget {
           child: const Text('Cancel'),
         ),
         FilledButton.icon(
-          onPressed: () => Navigator.of(context).pop(true),
+          onPressed: hasErrors ? null : () => Navigator.of(context).pop(true),
           icon: const Icon(Icons.check),
           label: const Text('Confirm Schedule'),
         ),

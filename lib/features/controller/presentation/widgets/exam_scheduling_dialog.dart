@@ -6,8 +6,6 @@ import 'package:office_pal/features/controller/presentation/providers/exam_provi
 import 'package:intl/intl.dart';
 import 'package:office_pal/features/controller/presentation/widgets/exam_schedule_preview_dialog.dart';
 import 'package:office_pal/features/controller/presentation/widgets/pdf_preview_dialog.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:excel/excel.dart';
 import 'package:office_pal/features/controller/utils/exam_timetable_excel.dart';
 
 enum ExamSession { morning, afternoon }
@@ -79,35 +77,83 @@ class _ExamSchedulingDialogState extends ConsumerState<ExamSchedulingDialog> {
       );
     }).toList();
 
-    // Show preview dialog
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => ExamSchedulePreviewDialog(
-        exams: exams,
-        courses: widget.selectedCourses,
-      ),
-    );
+    try {
+      // Pre-check for existing exams
+      final repository = ref.read(examRepositoryProvider);
+      final courseIds =
+          widget.selectedCourses.map((c) => c.courseCode).toList();
+      final existingExams = await repository.getExamHistory();
+      final conflictingCourses = existingExams
+          .where((e) => courseIds.contains(e['course_id']))
+          .map((e) => {
+                'courseId': e['course_id'],
+                'examDate': DateTime.parse(e['exam_date']),
+                'session': e['session'],
+                'time': e['time'],
+              })
+          .toList();
 
-    if (result == true && mounted) {
-      try {
-        final repository = ref.read(examRepositoryProvider);
+      if (conflictingCourses.isNotEmpty) {
+        if (!mounted) return;
+        await showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Existing Exams Found'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                    'The following courses already have exams scheduled:'),
+                const SizedBox(height: 8),
+                ...conflictingCourses.map((e) {
+                  final course = widget.selectedCourses
+                      .firstWhere((c) => c.courseCode == e['courseId']);
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(
+                      '• ${e['courseId']} - ${course.courseName}\n  ${DateFormat('MMM d, y').format(e['examDate'])} at ${e['time']} (${e['session']})',
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                  );
+                }),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      // Show preview dialog
+      final result = await showDialog<bool>(
+        context: context,
+        builder: (context) => ExamSchedulePreviewDialog(
+          exams: exams,
+          courses: widget.selectedCourses,
+        ),
+      );
+
+      if (result == true && mounted) {
         await repository.scheduleExams(exams);
-
-        // Generate and show Excel
         await _generateAndShowExcel(exams, widget.selectedCourses);
-
         if (mounted) {
           Navigator.of(context).pop(exams);
         }
-      } catch (error) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error scheduling exams: $error'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error scheduling exams: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -138,101 +184,6 @@ class _ExamSchedulingDialogState extends ConsumerState<ExamSchedulingDialog> {
     }
   }
 
-  Future<void> _importFromCSV() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['xlsx', 'xls', 'csv'],
-      );
-
-      if (result != null) {
-        final bytes = result.files.first.bytes!;
-        final excel = Excel.decodeBytes(bytes);
-        final sheet = excel.tables[excel.tables.keys.first]!;
-
-        List<Exam> importedExams = [];
-
-        // Skip header row
-        for (var row in sheet.rows.skip(1)) {
-          if (row[0]?.value == null) continue;
-
-          try {
-            final courseId = row[0]!.value.toString();
-            final date = DateTime.parse(row[1]!.value.toString());
-            final session = row[2]!.value.toString().toUpperCase();
-            final time = row[3]!.value.toString();
-            final duration = int.parse(row[4]!.value.toString());
-
-            importedExams.add(Exam(
-              examId: _generateExamId(courseId),
-              courseId: courseId,
-              examDate: date,
-              session: session,
-              time: time,
-              duration: duration,
-            ));
-          } catch (e) {
-            print('Error parsing row: $e');
-            continue;
-          }
-        }
-
-        if (importedExams.isEmpty) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('No valid exams found in the file'),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          }
-          return;
-        }
-
-        // Show preview dialog
-        final previewResult = await showDialog<bool>(
-          context: context,
-          builder: (context) => ExamSchedulePreviewDialog(
-            exams: importedExams,
-            courses: widget.selectedCourses,
-          ),
-        );
-
-        if (previewResult == true && mounted) {
-          try {
-            final repository = ref.read(examRepositoryProvider);
-            await repository.scheduleExams(importedExams);
-
-            // Generate and show Excel
-            await _generateAndShowExcel(importedExams, widget.selectedCourses);
-
-            if (mounted) {
-              Navigator.of(context).pop(importedExams);
-            }
-          } catch (error) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Error scheduling exams: $error'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          }
-        }
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error importing file: $error'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -244,18 +195,6 @@ class _ExamSchedulingDialogState extends ConsumerState<ExamSchedulingDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: _importFromCSV,
-                      icon: const Icon(Icons.upload_file),
-                      label: const Text('Import from CSV'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
               Text('Selected Courses (${widget.selectedCourses.length}):'),
               const SizedBox(height: 8),
               ...widget.selectedCourses.map((course) => Text(

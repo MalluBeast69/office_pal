@@ -3,6 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:office_pal/features/controller/domain/models/course.dart';
 import 'package:office_pal/features/controller/presentation/widgets/exam_scheduling_dialog.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:excel/excel.dart';
+import 'package:office_pal/features/controller/domain/models/exam.dart';
+import 'package:office_pal/features/controller/presentation/providers/exam_provider.dart';
+import 'package:office_pal/features/controller/presentation/widgets/exam_schedule_preview_dialog.dart';
+import 'package:office_pal/features/controller/domain/repositories/exam_repository.dart';
+import 'package:office_pal/features/controller/presentation/widgets/exam_history_dialog.dart';
 
 enum ExamType { internal, external }
 
@@ -114,6 +121,19 @@ class _ExamSchedulingPageState extends ConsumerState<ExamSchedulingPage> {
         title: const Text('Schedule Exam'),
         centerTitle: true,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.history),
+            onPressed: () => showDialog(
+              context: context,
+              builder: (context) => const ExamHistoryDialog(),
+            ),
+            tooltip: 'Exam History',
+          ),
+          IconButton(
+            icon: const Icon(Icons.upload_file),
+            onPressed: _importFromCSV,
+            tooltip: 'Import from Excel',
+          ),
           if (selectedCourses.isNotEmpty)
             TextButton.icon(
               onPressed: () async {
@@ -393,5 +413,131 @@ class _ExamSchedulingPageState extends ConsumerState<ExamSchedulingPage> {
               ],
             ),
     );
+  }
+
+  Future<void> _importFromCSV() async {
+    try {
+      print('Starting file picker...');
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['xlsx', 'xls', 'csv'],
+        withData: true,
+      );
+
+      print('File picker result: ${result?.files.length ?? 0} files');
+      if (result != null) {
+        final file = result.files.first;
+        print('File name: ${file.name}');
+        print('File size: ${file.size} bytes');
+
+        if (file.bytes == null) {
+          throw Exception('No file content');
+        }
+
+        print('Decoding Excel file...');
+        final excel = Excel.decodeBytes(file.bytes!);
+        final sheet = excel.tables[excel.tables.keys.first]!;
+        print('Sheet rows: ${sheet.rows.length}');
+
+        List<Exam> importedExams = [];
+
+        // Skip header row
+        for (var i = 1; i < sheet.rows.length; i++) {
+          final row = sheet.rows[i];
+          print(
+              'Processing row $i: ${row.map((cell) => cell?.value).toList()}');
+
+          if (row.isEmpty || row[0]?.value == null) {
+            print('Skipping empty row $i');
+            continue;
+          }
+
+          try {
+            final courseId = row[0]!.value.toString();
+            final date = DateTime.parse(row[1]!.value.toString());
+            final session = row[2]!.value.toString().toUpperCase();
+            final time = row[3]!.value.toString();
+            final duration = int.parse(row[4]!.value.toString());
+
+            print(
+                'Parsed row $i: courseId=$courseId, date=$date, session=$session, time=$time, duration=$duration');
+
+            importedExams.add(Exam(
+              examId:
+                  'EX$courseId${DateTime.now().millisecondsSinceEpoch % 10000}',
+              courseId: courseId,
+              examDate: date,
+              session: session,
+              time: time,
+              duration: duration,
+            ));
+          } catch (e, stackTrace) {
+            print('Error parsing row $i: $e');
+            print('Stack trace: $stackTrace');
+            continue;
+          }
+        }
+
+        print('Total exams imported: ${importedExams.length}');
+
+        if (importedExams.isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('No valid exams found in the file'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          return;
+        }
+
+        // Show preview dialog
+        final previewResult = await showDialog<bool>(
+          context: context,
+          builder: (context) => ExamSchedulePreviewDialog(
+            exams: importedExams,
+            courses: _allCourses,
+          ),
+        );
+
+        if (previewResult == true && mounted) {
+          try {
+            final repository = ref.read(examRepositoryProvider);
+            await repository.scheduleExams(importedExams);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Exams imported and scheduled successfully'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            }
+          } catch (error, stackTrace) {
+            print('Error scheduling exams: $error');
+            print('Stack trace: $stackTrace');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Error scheduling exams: $error'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
+        }
+      }
+    } catch (error, stackTrace) {
+      print('Error importing file: $error');
+      print('Stack trace: $stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error importing file: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }

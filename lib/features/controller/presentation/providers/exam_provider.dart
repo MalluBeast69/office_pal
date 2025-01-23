@@ -5,7 +5,7 @@ import 'package:office_pal/features/controller/domain/models/exam.dart';
 final examRepositoryProvider =
     Provider<ExamRepository>((ref) => ExamRepository());
 
-final examsProvider = FutureProvider<List<Exam>>((ref) async {
+final examsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final repository = ref.watch(examRepositoryProvider);
-  return repository.getExams();
+  return repository.getExamHistory();
 });

@@ -40,23 +40,21 @@ class _SuperintendentDashboardPageState
     setState(() => isLoading = true);
     try {
       // Load statistics
-      final studentCount =
-          await Supabase.instance.client.from('student').select().count();
+      final studentResponse =
+          await Supabase.instance.client.from('student').select();
 
-      final courseCount =
-          await Supabase.instance.client.from('course').select().count();
+      final courseResponse =
+          await Supabase.instance.client.from('course').select();
 
-      final departmentCount =
-          await Supabase.instance.client.from('departments').select().count();
+      final departmentResponse =
+          await Supabase.instance.client.from('departments').select();
 
-      final facultyCount =
-          await Supabase.instance.client.from('faculty').select().count();
+      final facultyResponse =
+          await Supabase.instance.client.from('faculty').select();
 
-      final hallCount =
-          await Supabase.instance.client.from('hall').select().count();
+      final hallResponse = await Supabase.instance.client.from('hall').select();
 
-      final examCount =
-          await Supabase.instance.client.from('exam').select().count();
+      final examResponse = await Supabase.instance.client.from('exam').select();
 
       // Load notifications
       final notificationsResponse = await Supabase.instance.client
@@ -67,12 +65,12 @@ class _SuperintendentDashboardPageState
       if (mounted) {
         setState(() {
           stats = {
-            'students': studentCount ?? 0,
-            'courses': courseCount ?? 0,
-            'departments': departmentCount ?? 0,
-            'faculty': facultyCount ?? 0,
-            'halls': hallCount ?? 0,
-            'exams': examCount ?? 0,
+            'students': studentResponse.length,
+            'courses': courseResponse.length,
+            'departments': departmentResponse.length,
+            'faculty': facultyResponse.length,
+            'halls': hallResponse.length,
+            'exams': examResponse.length,
           };
           notifications =
               List<Map<String, dynamic>>.from(notificationsResponse);
@@ -290,32 +288,29 @@ class _SuperintendentDashboardPageState
     }
   }
 
-  Widget _buildStatCard(String title, int value, IconData icon) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 32),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+  Widget _buildQuickStat(String title, int value, IconData icon, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: color),
+          const SizedBox(width: 8),
+          Text(
+            '$title:',
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
             ),
-            const SizedBox(height: 4),
-            Text(
-              value.toString(),
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            value.toString(),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -395,108 +390,28 @@ class _SuperintendentDashboardPageState
                       ),
                     ),
                     const SizedBox(height: 12),
-                    if (isSmallScreen)
-                      GridView.count(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisCount: 2,
-                        mainAxisSpacing: 8,
-                        crossAxisSpacing: 8,
-                        childAspectRatio: 1.2,
-                        children: [
-                          _DashboardCard(
-                            title: 'Students',
-                            value: stats['students'].toString(),
-                            icon: Icons.people,
-                            color: Colors.blue,
-                            onTap: () => _navigateToManagement('students'),
-                          ),
-                          _DashboardCard(
-                            title: 'Courses',
-                            value: stats['courses'].toString(),
-                            icon: Icons.book,
-                            color: Colors.green,
-                            onTap: () => _navigateToManagement('courses'),
-                          ),
-                          _DashboardCard(
-                            title: 'Departments',
-                            value: stats['departments'].toString(),
-                            icon: Icons.business,
-                            color: Colors.orange,
-                            onTap: () => _navigateToManagement('departments'),
-                          ),
-                          _DashboardCard(
-                            title: 'Faculty',
-                            value: stats['faculty'].toString(),
-                            icon: Icons.school,
-                            color: Colors.purple,
-                            onTap: () => _navigateToManagement('faculty'),
-                          ),
-                          _DashboardCard(
-                            title: 'Halls',
-                            value: stats['halls'].toString(),
-                            icon: Icons.meeting_room,
-                            color: Colors.teal,
-                            onTap: () => _navigateToManagement('halls'),
-                          ),
-                          _DashboardCard(
-                            title: 'Exams',
-                            value: stats['exams'].toString(),
-                            icon: Icons.assignment,
-                            color: Colors.pink,
-                            onTap: () => _navigateToManagement('exams'),
-                          ),
-                        ],
-                      )
-                    else
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _DashboardCard(
-                            title: 'Total Students',
-                            value: stats['students'].toString(),
-                            icon: Icons.people,
-                            color: Colors.blue,
-                            onTap: () => _navigateToManagement('students'),
-                          ),
-                          _DashboardCard(
-                            title: 'Total Courses',
-                            value: stats['courses'].toString(),
-                            icon: Icons.book,
-                            color: Colors.green,
-                            onTap: () => _navigateToManagement('courses'),
-                          ),
-                          _DashboardCard(
-                            title: 'Departments',
-                            value: stats['departments'].toString(),
-                            icon: Icons.business,
-                            color: Colors.orange,
-                            onTap: () => _navigateToManagement('departments'),
-                          ),
-                          _DashboardCard(
-                            title: 'Faculty Members',
-                            value: stats['faculty'].toString(),
-                            icon: Icons.school,
-                            color: Colors.purple,
-                            onTap: () => _navigateToManagement('faculty'),
-                          ),
-                          _DashboardCard(
-                            title: 'Halls',
-                            value: stats['halls'].toString(),
-                            icon: Icons.meeting_room,
-                            color: Colors.teal,
-                            onTap: () => _navigateToManagement('halls'),
-                          ),
-                          _DashboardCard(
-                            title: 'Exams',
-                            value: stats['exams'].toString(),
-                            icon: Icons.assignment,
-                            color: Colors.pink,
-                            onTap: () => _navigateToManagement('exams'),
-                          ),
-                        ],
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildQuickStat('Students', stats['students'],
+                                Icons.people, Colors.blue),
+                            _buildQuickStat('Courses', stats['courses'],
+                                Icons.book, Colors.green),
+                            _buildQuickStat('Departments', stats['departments'],
+                                Icons.business, Colors.orange),
+                            _buildQuickStat('Faculty', stats['faculty'],
+                                Icons.school, Colors.purple),
+                            _buildQuickStat('Halls', stats['halls'],
+                                Icons.meeting_room, Colors.teal),
+                            _buildQuickStat('Exams', stats['exams'],
+                                Icons.assignment, Colors.pink),
+                          ],
+                        ),
                       ),
+                    ),
                     const SizedBox(height: 24),
                     Padding(
                       padding: const EdgeInsets.only(left: 4.0),

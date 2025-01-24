@@ -5,6 +5,22 @@ import 'dart:developer' as developer;
 import 'timetable_generation_page.dart';
 import 'package:intl/intl.dart';
 import 'package:office_pal/features/controller/presentation/providers/exam_provider.dart';
+import 'package:office_pal/features/controller/presentation/providers/course_provider.dart';
+import 'package:office_pal/features/controller/domain/models/exam.dart';
+import 'package:office_pal/features/controller/domain/models/course.dart';
+import 'package:office_pal/features/controller/presentation/widgets/excel_preview_dialog.dart';
+import 'package:office_pal/features/controller/utils/exam_timetable_excel.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:excel/excel.dart' as excel;
+
+enum ExamSortOption {
+  date('Date'),
+  course('Course'),
+  session('Session');
+
+  final String label;
+  const ExamSortOption(this.label);
+}
 
 class ExamManagementPage extends ConsumerStatefulWidget {
   const ExamManagementPage({super.key});
@@ -27,6 +43,8 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
   bool _showUpcoming = true;
   bool _showPast = true;
   String _searchQuery = '';
+  ExamSortOption _sortOption = ExamSortOption.date;
+  bool _sortAscending = true;
 
   final List<String> examTypes = [
     'common1',
@@ -43,6 +61,10 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
     super.initState();
     _loadExams();
     _loadCourses();
+    // Add listener to refresh exams when page gains focus
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.invalidate(examsProvider);
+    });
   }
 
   Future<void> _loadCourses() async {
@@ -390,7 +412,7 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete),
-                  onPressed: () => _showDeleteConfirmation(exam),
+                  onPressed: () => _showDeleteConfirmation(Exam.fromJson(exam)),
                 ),
               ],
             ),
@@ -409,17 +431,64 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
 
   List<Map<String, dynamic>> _filterAndSortExams(
       List<Map<String, dynamic>> exams) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
     return exams.where((exam) {
+      // Search filter
+      final course = exam['course'] as Map<String, dynamic>?;
+      if (course == null) return false;
+
+      final courseCode = course['course_code']?.toString().toLowerCase() ?? '';
+      final courseName = course['course_name']?.toString().toLowerCase() ?? '';
+      final searchLower = _searchQuery.toLowerCase();
+
+      if (!courseCode.contains(searchLower) &&
+          !courseName.contains(searchLower)) {
+        return false;
+      }
+
+      // Date filters
       final examDate = DateTime.parse(exam['exam_date']);
-      if (_showToday && _isToday(examDate)) return true;
-      if (_showUpcoming && examDate.isAfter(DateTime.now())) return true;
-      if (_showPast && examDate.isBefore(DateTime.now())) return true;
-      return false;
+      final examDay = DateTime(examDate.year, examDate.month, examDate.day);
+
+      final isToday = examDay.isAtSameMomentAs(today);
+      final isUpcoming = examDay.isAfter(today);
+      final isPast = examDay.isBefore(today);
+
+      if (isToday && !_showToday) return false;
+      if (isUpcoming && !_showUpcoming) return false;
+      if (isPast && !_showPast) return false;
+
+      return true;
     }).toList()
       ..sort((a, b) {
-        final aDate = DateTime.parse(a['exam_date']);
-        final bDate = DateTime.parse(b['exam_date']);
-        return aDate.compareTo(bDate);
+        switch (_sortOption) {
+          case ExamSortOption.date:
+            final aDate = DateTime.parse(a['exam_date']);
+            final bDate = DateTime.parse(b['exam_date']);
+            return _sortAscending
+                ? aDate.compareTo(bDate)
+                : bDate.compareTo(aDate);
+          case ExamSortOption.course:
+            final aCourse =
+                (a['course'] as Map<String, dynamic>?)?['course_code']
+                        ?.toString() ??
+                    '';
+            final bCourse =
+                (b['course'] as Map<String, dynamic>?)?['course_code']
+                        ?.toString() ??
+                    '';
+            return _sortAscending
+                ? aCourse.compareTo(bCourse)
+                : bCourse.compareTo(aCourse);
+          case ExamSortOption.session:
+            final aSession = a['session']?.toString() ?? '';
+            final bSession = b['session']?.toString() ?? '';
+            return _sortAscending
+                ? aSession.compareTo(bSession)
+                : bSession.compareTo(aSession);
+        }
       });
   }
 
@@ -428,49 +497,51 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
     final today = DateTime(now.year, now.month, now.day);
     final examDay = DateTime(examDate.year, examDate.month, examDate.day);
 
-    if (examDay.isBefore(today)) {
+    if (examDay.isAtSameMomentAs(today)) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: Colors.red.shade50,
+          color: Colors.orange.withOpacity(0.2),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.red.shade200),
         ),
-        child: const Text(
-          'Past',
-          style: TextStyle(color: Colors.red, fontSize: 12),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.warning_amber_rounded, size: 16, color: Colors.orange),
+            SizedBox(width: 4),
+            Text('Today', style: TextStyle(color: Colors.orange)),
+          ],
         ),
       );
-    } else if (examDay.isAfter(today)) {
+    } else if (examDay.isBefore(today)) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: Colors.green.shade50,
+          color: Colors.grey.withOpacity(0.2),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.green.shade200),
         ),
-        child: const Text(
-          'Upcoming',
-          style: TextStyle(color: Colors.green, fontSize: 12),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.history, size: 16, color: Colors.grey),
+            SizedBox(width: 4),
+            Text('Past', style: TextStyle(color: Colors.grey)),
+          ],
         ),
       );
     } else {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: Colors.orange.shade50,
+          color: Colors.green.withOpacity(0.2),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.orange.shade200),
         ),
         child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.warning, color: Colors.orange, size: 16),
+            Icon(Icons.event_available, size: 16, color: Colors.green),
             SizedBox(width: 4),
-            Text(
-              'Today',
-              style: TextStyle(color: Colors.orange, fontSize: 12),
-            ),
+            Text('Upcoming', style: TextStyle(color: Colors.green)),
           ],
         ),
       );
@@ -484,13 +555,13 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
     );
   }
 
-  Future<void> _showDeleteConfirmation(Map<String, dynamic> exam) async {
-    final confirmed = await showDialog<bool>(
+  Future<void> _showDeleteConfirmation(Exam exam) async {
+    final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Exam'),
         content: Text(
-            'Are you sure you want to delete this exam for ${exam['course']['course_code']}?'),
+            'Are you sure you want to delete the exam for ${exam.courseId}?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -498,22 +569,24 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Delete'),
           ),
         ],
       ),
     );
 
-    if (confirmed == true && mounted) {
+    if (result == true && mounted) {
       try {
         final repository = ref.read(examRepositoryProvider);
-        await repository.deleteExam(exam['exam_id']);
+        await repository.deleteExam(exam.examId);
+        ref.refresh(examsProvider);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Exam deleted successfully')),
+            const SnackBar(
+              content: Text('Exam deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
           );
         }
       } catch (e) {
@@ -529,14 +602,50 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
     }
   }
 
+  Future<void> _generateExcelForAllExams() async {
+    try {
+      final examRepository = ref.read(examRepositoryProvider);
+      final courseRepository = ref.read(courseRepositoryProvider);
+
+      final exams = await examRepository.generateExcelData();
+      final courses = await courseRepository.getCourses();
+
+      if (!mounted) return;
+
+      await showDialog(
+        context: context,
+        builder: (context) => ExcelPreviewDialog(
+          excelBytes: ExamTimetableExcel.generate(
+            exams.map((e) => Exam.fromJson(e)).toList(),
+            courses.map((c) => Course.fromJson(c)).toList(),
+          ),
+          fileName:
+              'all_exams_${DateFormat('yyyyMMdd').format(DateTime.now())}.xlsx',
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generating Excel: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final examsAsync = ref.watch(examsProvider);
+    final coursesAsync = ref.watch(coursesProvider);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Exam Management'),
         actions: [
           IconButton(
             icon: const Icon(Icons.calendar_month),
+            tooltip: 'Generate Timetable',
             onPressed: () {
               Navigator.push(
                 context,
@@ -545,89 +654,185 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
                 ),
               );
             },
-            tooltip: 'Generate Timetable',
           ),
           IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: _showManualGenerationDialog,
-            tooltip: 'Manual Generation',
+            icon: const Icon(Icons.table_chart),
+            tooltip: 'Generate Excel',
+            onPressed: _generateExcelForAllExams,
           ),
         ],
-      ),
-      body: Column(
-        children: [
-          // Filters section
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Filters',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(140),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Search by course code or name',
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            value: selectedCourse,
-                            decoration: const InputDecoration(
-                              labelText: 'Course',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: [
-                              const DropdownMenuItem<String>(
-                                value: null,
-                                child: Text('All Courses'),
-                              ),
-                              ...courses.map<DropdownMenuItem<String>>(
-                                  (course) => DropdownMenuItem<String>(
-                                        value: course['course_code'],
-                                        child: Text(course['course_code']),
-                                      )),
-                            ],
-                            onChanged: (value) {
-                              setState(() {
-                                selectedCourse = value;
-                                _applyFilters();
-                              });
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        TextButton.icon(
-                          onPressed: _resetFilters,
-                          icon: const Icon(Icons.clear),
-                          label: const Text('Clear'),
-                        ),
-                      ],
+                    filled: true,
+                    fillColor: Theme.of(context).colorScheme.surface,
+                  ),
+                  onChanged: (value) => setState(() => _searchQuery = value),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  children: [
+                    // Sort options
+                    DropdownButton<ExamSortOption>(
+                      value: _sortOption,
+                      items: ExamSortOption.values.map((option) {
+                        return DropdownMenuItem(
+                          value: option,
+                          child: Text('Sort by ${option.label}'),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _sortOption = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: Icon(_sortAscending
+                          ? Icons.arrow_upward
+                          : Icons.arrow_downward),
+                      onPressed: () =>
+                          setState(() => _sortAscending = !_sortAscending),
+                      tooltip: _sortAscending ? 'Ascending' : 'Descending',
+                    ),
+                    const SizedBox(width: 16),
+                    // Filter chips
+                    FilterChip(
+                      label: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.warning_amber_rounded,
+                              size: 16, color: Colors.orange),
+                          SizedBox(width: 4),
+                          Text('Today'),
+                        ],
+                      ),
+                      selected: _showToday,
+                      selectedColor: Colors.orange.withOpacity(0.2),
+                      checkmarkColor: Colors.orange,
+                      onSelected: (value) => setState(() => _showToday = value),
+                    ),
+                    const SizedBox(width: 8),
+                    FilterChip(
+                      label: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.event_available,
+                              size: 16, color: Colors.green),
+                          SizedBox(width: 4),
+                          Text('Upcoming'),
+                        ],
+                      ),
+                      selected: _showUpcoming,
+                      selectedColor: Colors.green.withOpacity(0.2),
+                      checkmarkColor: Colors.green,
+                      onSelected: (value) =>
+                          setState(() => _showUpcoming = value),
+                    ),
+                    const SizedBox(width: 8),
+                    FilterChip(
+                      label: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.history, size: 16, color: Colors.grey),
+                          SizedBox(width: 4),
+                          Text('Past'),
+                        ],
+                      ),
+                      selected: _showPast,
+                      selectedColor: Colors.grey.withOpacity(0.2),
+                      checkmarkColor: Colors.grey,
+                      onSelected: (value) => setState(() => _showPast = value),
                     ),
                   ],
                 ),
               ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+      body: examsAsync.when(
+        data: (exams) {
+          if (exams.isEmpty) {
+            return const Center(
+              child: Text('No exams scheduled yet'),
+            );
+          }
+
+          return coursesAsync.when(
+            data: (courses) {
+              final courseMap = {
+                for (var course in courses) course['course_code']: course
+              };
+
+              final filteredExams = _filterAndSortExams(exams);
+
+              return ListView.builder(
+                itemCount: filteredExams.length,
+                padding: const EdgeInsets.all(16),
+                itemBuilder: (context, index) {
+                  final exam = Exam.fromJson(filteredExams[index]);
+                  final course = courseMap[exam.courseId];
+
+                  return Card(
+                    margin: const EdgeInsets.symmetric(vertical: 8),
+                    child: ListTile(
+                      title: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                                '${exam.courseId} - ${course?['course_name'] ?? 'Unknown Course'}'),
+                          ),
+                          _buildStatusBadge(exam.examDate),
+                        ],
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                              'Department: ${course?['dept_id'] ?? 'Unknown Dept'}'),
+                          Text(
+                              'Date: ${DateFormat('MMM d, y').format(exam.examDate)}'),
+                          Text('Session: ${exam.session}, Time: ${exam.time}'),
+                          Text('Duration: ${exam.duration} mins'),
+                        ],
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete),
+                        tooltip: 'Delete',
+                        onPressed: () => _showDeleteConfirmation(exam),
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, stack) => Center(
+              child: Text('Error loading courses: $error'),
             ),
-          ),
-          // Exams list
-          Expanded(
-            child: isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : filteredExams.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No exams found',
-                          style: TextStyle(fontSize: 18),
-                        ),
-                      )
-                    : _buildExamList(exams),
-          ),
-        ],
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, stack) => Center(
+          child: Text('Error loading exams: $error'),
+        ),
       ),
     );
   }

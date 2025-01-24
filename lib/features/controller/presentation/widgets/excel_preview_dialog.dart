@@ -5,19 +5,19 @@ import 'package:path_provider/path_provider.dart';
 import 'package:universal_html/html.dart' as html;
 import 'package:flutter/foundation.dart' show kIsWeb;
 
-class PDFPreviewDialog extends StatelessWidget {
-  final List<int> pdfBytes;
+class ExcelPreviewDialog extends StatelessWidget {
+  final List<int> excelBytes;
   final String fileName;
 
-  const PDFPreviewDialog({
+  const ExcelPreviewDialog({
     super.key,
-    required this.pdfBytes,
-    this.fileName = 'exam_timetable.pdf',
+    required this.excelBytes,
+    this.fileName = 'exam_timetable.xlsx',
   });
 
-  Future<void> _downloadPDF() async {
+  Future<void> _downloadExcel() async {
     if (kIsWeb) {
-      final blob = html.Blob([pdfBytes]);
+      final blob = html.Blob([excelBytes]);
       final url = html.Url.createObjectUrlFromBlob(blob);
       final anchor = html.AnchorElement(href: url)
         ..setAttribute('download', fileName)
@@ -29,15 +29,15 @@ class PDFPreviewDialog extends StatelessWidget {
           dialogTitle: 'Save exam timetable',
           fileName: fileName,
           type: FileType.custom,
-          allowedExtensions: ['pdf'],
+          allowedExtensions: ['xlsx'],
         );
 
         if (outputFile != null) {
           final file = File(outputFile);
-          await file.writeAsBytes(pdfBytes);
+          await file.writeAsBytes(excelBytes);
         }
       } catch (e) {
-        debugPrint('Error saving PDF: $e');
+        debugPrint('Error saving Excel: $e');
       }
     }
   }
@@ -49,9 +49,9 @@ class PDFPreviewDialog extends StatelessWidget {
       content: const Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.picture_as_pdf, size: 64, color: Colors.red),
+          Icon(Icons.table_chart, size: 64, color: Colors.green),
           SizedBox(height: 16),
-          Text('PDF has been generated successfully!'),
+          Text('Excel file has been generated successfully!'),
           SizedBox(height: 8),
           Text(
             'Click the download button to save the timetable.',
@@ -65,9 +65,9 @@ class PDFPreviewDialog extends StatelessWidget {
           child: const Text('Close'),
         ),
         FilledButton.icon(
-          onPressed: _downloadPDF,
+          onPressed: _downloadExcel,
           icon: const Icon(Icons.download),
-          label: const Text('Download PDF'),
+          label: const Text('Download Excel'),
         ),
       ],
     );

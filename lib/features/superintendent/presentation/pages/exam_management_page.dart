@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:developer' as developer;
 import 'timetable_generation_page.dart';
+import 'package:intl/intl.dart';
+import 'package:office_pal/features/controller/presentation/providers/exam_provider.dart';
 
 class ExamManagementPage extends ConsumerStatefulWidget {
   const ExamManagementPage({super.key});
@@ -21,6 +23,10 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
   DateTime? selectedDate;
   String? selectedSession;
   final _formKey = GlobalKey<FormState>();
+  bool _showToday = true;
+  bool _showUpcoming = true;
+  bool _showPast = true;
+  String _searchQuery = '';
 
   final List<String> examTypes = [
     'common1',
@@ -334,6 +340,195 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
     }
   }
 
+  Widget _buildExamList(List<Map<String, dynamic>> exams) {
+    if (exams.isEmpty) {
+      return const Center(
+        child: Text('No exams scheduled'),
+      );
+    }
+
+    final filteredExams = _filterAndSortExams(exams);
+
+    return ListView.builder(
+      itemCount: filteredExams.length,
+      itemBuilder: (context, index) {
+        final exam = filteredExams[index];
+        final course = exam['course'] as Map<String, dynamic>;
+        final examDate = DateTime.parse(exam['exam_date']);
+        final isToday = _isToday(examDate);
+
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: ListTile(
+            title: Row(
+              children: [
+                Text('${course['course_code']} - ${course['course_name']}'),
+                const SizedBox(width: 8),
+                _buildStatusBadge(examDate),
+              ],
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Date: ${DateFormat('MMM d, y').format(examDate)}',
+                ),
+                Text(
+                  'Session: ${exam['session']}, Time: ${exam['time']}, Duration: ${exam['duration']} mins',
+                ),
+                Text(
+                  'Department: ${course['dept_id']}',
+                ),
+              ],
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.edit),
+                  onPressed: () => _showEditDialog(exam),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete),
+                  onPressed: () => _showDeleteConfirmation(exam),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  bool _isToday(DateTime date) {
+    final now = DateTime.now();
+    return date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day;
+  }
+
+  List<Map<String, dynamic>> _filterAndSortExams(
+      List<Map<String, dynamic>> exams) {
+    return exams.where((exam) {
+      final examDate = DateTime.parse(exam['exam_date']);
+      if (_showToday && _isToday(examDate)) return true;
+      if (_showUpcoming && examDate.isAfter(DateTime.now())) return true;
+      if (_showPast && examDate.isBefore(DateTime.now())) return true;
+      return false;
+    }).toList()
+      ..sort((a, b) {
+        final aDate = DateTime.parse(a['exam_date']);
+        final bDate = DateTime.parse(b['exam_date']);
+        return aDate.compareTo(bDate);
+      });
+  }
+
+  Widget _buildStatusBadge(DateTime examDate) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final examDay = DateTime(examDate.year, examDate.month, examDate.day);
+
+    if (examDay.isBefore(today)) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.red.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.red.shade200),
+        ),
+        child: const Text(
+          'Past',
+          style: TextStyle(color: Colors.red, fontSize: 12),
+        ),
+      );
+    } else if (examDay.isAfter(today)) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.green.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.green.shade200),
+        ),
+        child: const Text(
+          'Upcoming',
+          style: TextStyle(color: Colors.green, fontSize: 12),
+        ),
+      );
+    } else {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.orange.shade200),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.warning, color: Colors.orange, size: 16),
+            SizedBox(width: 4),
+            Text(
+              'Today',
+              style: TextStyle(color: Colors.orange, fontSize: 12),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  Future<void> _showEditDialog(Map<String, dynamic> exam) async {
+    // TODO: Implement edit dialog
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Edit functionality coming soon')),
+    );
+  }
+
+  Future<void> _showDeleteConfirmation(Map<String, dynamic> exam) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Exam'),
+        content: Text(
+            'Are you sure you want to delete this exam for ${exam['course']['course_code']}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      try {
+        final repository = ref.read(examRepositoryProvider);
+        await repository.deleteExam(exam['exam_id']);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Exam deleted successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting exam: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -430,84 +625,7 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
                           style: TextStyle(fontSize: 18),
                         ),
                       )
-                    : ListView.builder(
-                        itemCount: filteredExams.length,
-                        padding: const EdgeInsets.all(16),
-                        itemBuilder: (context, index) {
-                          final exam = filteredExams[index];
-                          final courseType =
-                              exam['course']['course_type'] ?? 'unknown';
-                          return Card(
-                            child: ListTile(
-                              title: Row(
-                                children: [
-                                  Expanded(child: Text(exam['exam_id'])),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: _getExamTypeColor(courseType)
-                                          .withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: _getExamTypeColor(courseType),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      courseType.toUpperCase(),
-                                      style: TextStyle(
-                                        color: _getExamTypeColor(courseType),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Course: ${exam['course_id']}'),
-                                  Text('Date: ${exam['exam_date']}'),
-                                  Text('Session: ${exam['session']}'),
-                                  Text('Time: ${exam['time']}'),
-                                  Text('Duration: ${exam['duration']} minutes'),
-                                ],
-                              ),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.delete_outline),
-                                color: Colors.red,
-                                onPressed: () => showDialog(
-                                  context: context,
-                                  builder: (context) => AlertDialog(
-                                    title: const Text('Delete Exam'),
-                                    content: Text(
-                                        'Are you sure you want to delete ${exam['exam_id']}?'),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(context),
-                                        child: const Text('Cancel'),
-                                      ),
-                                      FilledButton(
-                                        onPressed: () {
-                                          Navigator.pop(context);
-                                          _deleteExam(exam['exam_id']);
-                                        },
-                                        style: FilledButton.styleFrom(
-                                          backgroundColor: Colors.red,
-                                        ),
-                                        child: const Text('Delete'),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                    : _buildExamList(exams),
           ),
         ],
       ),

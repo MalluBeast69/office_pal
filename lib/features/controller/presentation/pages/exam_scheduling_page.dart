@@ -4,12 +4,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:office_pal/features/controller/domain/models/course.dart';
 import 'package:office_pal/features/controller/presentation/widgets/exam_scheduling_dialog.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:excel/excel.dart';
+import 'package:excel/excel.dart' as excel;
 import 'package:office_pal/features/controller/domain/models/exam.dart';
 import 'package:office_pal/features/controller/presentation/providers/exam_provider.dart';
 import 'package:office_pal/features/controller/presentation/widgets/exam_schedule_preview_dialog.dart';
 import 'package:office_pal/features/controller/domain/repositories/exam_repository.dart';
-import 'package:office_pal/features/controller/presentation/widgets/exam_history_dialog.dart';
 
 enum ExamType { internal, external }
 
@@ -23,6 +22,7 @@ final selectedSemesterProvider = StateProvider<int?>((ref) => null);
 final selectedDepartmentProvider = StateProvider<String?>((ref) => null);
 final searchQueryProvider = StateProvider<String>((ref) => '');
 final selectedCourseTypeProvider = StateProvider<String?>((ref) => null);
+final showOnlyUnscheduledProvider = StateProvider<bool>((ref) => false);
 
 class ExamSchedulingPage extends ConsumerStatefulWidget {
   const ExamSchedulingPage({super.key});
@@ -115,20 +115,13 @@ class _ExamSchedulingPageState extends ConsumerState<ExamSchedulingPage> {
     final externalType = ref.watch(externalExamTypeProvider);
     final selectedCourses = ref.watch(selectedCoursesProvider);
     final filteredCourses = _getFilteredCourses();
+    final examsAsync = ref.watch(examsProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Schedule Exam'),
         centerTitle: true,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.history),
-            onPressed: () => showDialog(
-              context: context,
-              builder: (context) => const ExamHistoryDialog(),
-            ),
-            tooltip: 'Exam History',
-          ),
           IconButton(
             icon: const Icon(Icons.upload_file),
             onPressed: _importFromCSV,
@@ -145,8 +138,7 @@ class _ExamSchedulingPageState extends ConsumerState<ExamSchedulingPage> {
                 );
 
                 if (exams != null) {
-                  // TODO: Save exams to database
-                  print('Exams scheduled: $exams');
+                  ref.read(selectedCoursesProvider.notifier).state = [];
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Exams scheduled successfully'),
@@ -369,45 +361,132 @@ class _ExamSchedulingPageState extends ConsumerState<ExamSchedulingPage> {
                                 .state = value;
                           },
                         ),
+                        const SizedBox(height: 16),
+                        // Show only unscheduled toggle
+                        SwitchListTile(
+                          title: const Text('Show only unscheduled courses'),
+                          value: ref.watch(showOnlyUnscheduledProvider),
+                          onChanged: (value) {
+                            ref
+                                .read(showOnlyUnscheduledProvider.notifier)
+                                .state = value;
+                          },
+                          dense: true,
+                        ),
                       ],
                     ),
                   ),
                 ),
                 Expanded(
-                  child: ListView.builder(
-                    itemCount: filteredCourses.length,
-                    itemBuilder: (context, index) {
-                      final course = filteredCourses[index];
-                      final isSelected = selectedCourses.contains(course);
+                  child: examsAsync.when(
+                    data: (exams) {
+                      final scheduledCourses =
+                          exams.map((e) => e['course_id'] as String).toSet();
 
-                      return CheckboxListTile(
-                        title: Text(course.courseCode),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(course.courseName),
-                            Text(
-                              'Semester ${course.semester} | ${course.deptId} | ${course.courseType.toUpperCase()} | ${course.credit} Credits',
-                              style: Theme.of(context).textTheme.bodySmall,
+                      // Filter out scheduled courses if toggle is on
+                      final showOnlyUnscheduled =
+                          ref.watch(showOnlyUnscheduledProvider);
+                      final displayCourses = showOnlyUnscheduled
+                          ? filteredCourses
+                              .where((course) =>
+                                  !scheduledCourses.contains(course.courseCode))
+                              .toList()
+                          : filteredCourses;
+
+                      return ListView.builder(
+                        itemCount: displayCourses.length,
+                        itemBuilder: (context, index) {
+                          final course = displayCourses[index];
+                          final isSelected = selectedCourses.contains(course);
+                          final hasExamScheduled =
+                              scheduledCourses.contains(course.courseCode);
+
+                          return CheckboxListTile(
+                            title: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(course.courseCode),
+                                ),
+                                if (hasExamScheduled)
+                                  Tooltip(
+                                    message: 'Exam already scheduled',
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.orange.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: Colors.orange.shade200,
+                                        ),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.warning_amber_rounded,
+                                            size: 16,
+                                            color: Colors.orange,
+                                          ),
+                                          SizedBox(width: 4),
+                                          Text(
+                                            'Scheduled',
+                                            style: TextStyle(
+                                              color: Colors.orange,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
-                          ],
-                        ),
-                        value: isSelected,
-                        onChanged: (bool? value) {
-                          if (value == true) {
-                            ref.read(selectedCoursesProvider.notifier).state = [
-                              ...selectedCourses,
-                              course,
-                            ];
-                          } else {
-                            ref.read(selectedCoursesProvider.notifier).state =
-                                selectedCourses
-                                    .where((c) => c != course)
-                                    .toList();
-                          }
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(course.courseName),
+                                Text(
+                                  'Semester ${course.semester} | ${course.deptId} | ${course.courseType.toUpperCase()} | ${course.credit} Credits',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                            value: isSelected,
+                            onChanged: hasExamScheduled
+                                ? null // Disable selection if exam is already scheduled
+                                : (bool? value) {
+                                    if (value == true) {
+                                      ref
+                                          .read(
+                                              selectedCoursesProvider.notifier)
+                                          .state = [
+                                        ...selectedCourses,
+                                        course,
+                                      ];
+                                    } else {
+                                      ref
+                                              .read(selectedCoursesProvider
+                                                  .notifier)
+                                              .state =
+                                          selectedCourses
+                                              .where((c) => c != course)
+                                              .toList();
+                                    }
+                                  },
+                          );
                         },
                       );
                     },
+                    loading: () => const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                    error: (error, stack) => Center(
+                      child: Text('Error: $error'),
+                    ),
                   ),
                 ),
               ],
@@ -435,8 +514,8 @@ class _ExamSchedulingPageState extends ConsumerState<ExamSchedulingPage> {
         }
 
         print('Decoding Excel file...');
-        final excel = Excel.decodeBytes(file.bytes!);
-        final sheet = excel.tables[excel.tables.keys.first]!;
+        final excelDoc = excel.Excel.decodeBytes(file.bytes!);
+        final sheet = excelDoc.tables[excelDoc.tables.keys.first]!;
         print('Sheet rows: ${sheet.rows.length}');
 
         List<Exam> importedExams = [];
@@ -485,55 +564,35 @@ class _ExamSchedulingPageState extends ConsumerState<ExamSchedulingPage> {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('No valid exams found in the file'),
-                backgroundColor: Colors.orange,
+                backgroundColor: Colors.red,
               ),
             );
           }
           return;
         }
 
-        // Show preview dialog
-        final previewResult = await showDialog<bool>(
-          context: context,
-          builder: (context) => ExamSchedulePreviewDialog(
-            exams: importedExams,
-            courses: _allCourses,
-          ),
-        );
+        // Schedule the imported exams
+        final repository = ref.read(examRepositoryProvider);
+        await repository.scheduleExams(importedExams);
 
-        if (previewResult == true && mounted) {
-          try {
-            final repository = ref.read(examRepositoryProvider);
-            await repository.scheduleExams(importedExams);
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Exams imported and scheduled successfully'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            }
-          } catch (error, stackTrace) {
-            print('Error scheduling exams: $error');
-            print('Stack trace: $stackTrace');
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Error scheduling exams: $error'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content:
+                  Text('${importedExams.length} exams imported successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          ref.refresh(examsProvider);
         }
       }
     } catch (error, stackTrace) {
-      print('Error importing file: $error');
+      print('Error importing exams: $error');
       print('Stack trace: $stackTrace');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error importing file: $error'),
+            content: Text('Error importing exams: $error'),
             backgroundColor: Colors.red,
           ),
         );

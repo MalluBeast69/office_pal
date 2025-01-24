@@ -5,8 +5,12 @@ import 'package:office_pal/features/controller/domain/models/exam.dart';
 import 'package:office_pal/features/controller/presentation/providers/exam_provider.dart';
 import 'package:intl/intl.dart';
 import 'package:office_pal/features/controller/presentation/widgets/exam_schedule_preview_dialog.dart';
-import 'package:office_pal/features/controller/presentation/widgets/pdf_preview_dialog.dart';
+import 'dart:io';
+import 'package:excel/excel.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:office_pal/features/controller/utils/exam_timetable_excel.dart';
+import 'package:office_pal/features/controller/presentation/widgets/excel_preview_dialog.dart';
 
 enum ExamSession { morning, afternoon }
 
@@ -28,13 +32,6 @@ class _ExamSchedulingDialogState extends ConsumerState<ExamSchedulingDialog> {
   DateTime? _selectedDate;
   ExamSession _selectedSession = ExamSession.morning;
   TimeOfDay _selectedTime = const TimeOfDay(hour: 9, minute: 0);
-  final _durationController = TextEditingController(text: '180');
-
-  @override
-  void dispose() {
-    _durationController.dispose();
-    super.dispose();
-  }
 
   Future<void> _selectDate() async {
     final DateTime? picked = await showDatePicker(
@@ -59,92 +56,117 @@ class _ExamSchedulingDialogState extends ConsumerState<ExamSchedulingDialog> {
   }
 
   String _generateExamId(String courseId) {
-    return 'EX$courseId${DateTime.now().millisecondsSinceEpoch % 10000}';
+    // Format: EX + courseId + 2 digits (total 11 chars)
+    // Example: EXDPME10492 (EX + DPME104 + 92)
+    final timestamp = DateTime.now().millisecondsSinceEpoch % 100;
+    final id = 'EX$courseId${timestamp.toString().padLeft(2, '0')}';
+    print('Generated exam ID: $id (length: ${id.length})');
+    if (id.length != 11) {
+      print('WARNING: Generated ID length is not 11 characters!');
+    }
+    return id;
   }
 
   Future<void> _scheduleExams() async {
     if (!_formKey.currentState!.validate()) return;
-
-    final exams = widget.selectedCourses.map((course) {
-      return Exam(
-        examId: _generateExamId(course.courseCode),
-        courseId: course.courseCode,
-        examDate: _selectedDate!,
-        session: _selectedSession.name.toUpperCase(),
-        time:
-            '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}:00',
-        duration: course.examDuration,
+    if (_selectedDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a date'),
+          backgroundColor: Colors.red,
+        ),
       );
-    }).toList();
+      return;
+    }
 
     try {
-      // Pre-check for existing exams
       final repository = ref.read(examRepositoryProvider);
       final courseIds =
           widget.selectedCourses.map((c) => c.courseCode).toList();
-      final existingExams = await repository.getExamHistory();
+
+      // Check for existing exams
+      final existingExams = await repository.getExams();
       final conflictingCourses = existingExams
           .where((e) => courseIds.contains(e['course_id']))
-          .map((e) => {
-                'courseId': e['course_id'],
-                'examDate': DateTime.parse(e['exam_date']),
-                'session': e['session'],
-                'time': e['time'],
-              })
+          .map((e) => Exam(
+                examId: e['exam_id'],
+                courseId: e['course_id'],
+                examDate: DateTime.parse(e['exam_date']),
+                session: e['session'],
+                time: e['time'],
+                duration: e['duration'],
+              ))
           .toList();
 
       if (conflictingCourses.isNotEmpty) {
         if (!mounted) return;
         await showDialog(
           context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Existing Exams Found'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                    'The following courses already have exams scheduled:'),
-                const SizedBox(height: 8),
-                ...conflictingCourses.map((e) {
-                  final course = widget.selectedCourses
-                      .firstWhere((c) => c.courseCode == e['courseId']);
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Text(
-                      '• ${e['courseId']} - ${course.courseName}\n  ${DateFormat('MMM d, y').format(e['examDate'])} at ${e['time']} (${e['session']})',
-                      style: const TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                  );
-                }),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
-              ),
-            ],
+          builder: (context) => ExamSchedulePreviewDialog(
+            exams: conflictingCourses,
+            selectedDate: _selectedDate!,
           ),
         );
         return;
       }
 
-      // Show preview dialog
+      // Create new exams
+      final exams = widget.selectedCourses.map((course) {
+        final examId = _generateExamId(course.courseCode);
+        final time =
+            '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}:00';
+        final examDate = DateFormat('yyyy-MM-dd').format(_selectedDate!);
+
+        return Exam(
+          examId: examId,
+          courseId: course.courseCode,
+          examDate: _selectedDate!,
+          session: _selectedSession.name.toUpperCase(),
+          time: time,
+          duration: course.examDuration,
+        );
+      }).toList();
+
+      // Show preview
       final result = await showDialog<bool>(
         context: context,
         builder: (context) => ExamSchedulePreviewDialog(
           exams: exams,
-          courses: widget.selectedCourses,
+          selectedDate: _selectedDate!,
         ),
       );
 
       if (result == true && mounted) {
         await repository.scheduleExams(exams);
-        await _generateAndShowExcel(exams, widget.selectedCourses);
+
+        // Show success dialog with Excel download option
         if (mounted) {
-          Navigator.of(context).pop(exams);
+          final downloadExcel = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Exams Scheduled Successfully'),
+              content: const Text(
+                  'Would you like to download the schedule as Excel?'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('No'),
+                ),
+                FilledButton.icon(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  icon: const Icon(Icons.table_chart),
+                  label: const Text('Download Excel'),
+                ),
+              ],
+            ),
+          );
+
+          if (downloadExcel == true) {
+            await _generateExcel();
+          }
         }
+
+        Navigator.of(context).pop(exams);
       }
     } catch (error) {
       if (mounted) {
@@ -158,25 +180,28 @@ class _ExamSchedulingDialogState extends ConsumerState<ExamSchedulingDialog> {
     }
   }
 
-  Future<void> _generateAndShowExcel(
-      List<Exam> exams, List<Course> courses) async {
+  Future<void> _generateExcel() async {
     try {
-      final excelBytes = ExamTimetableExcel.generate(exams, courses);
-      if (mounted) {
-        await showDialog(
-          context: context,
-          builder: (context) => ExcelPreviewDialog(
-            excelBytes: excelBytes,
-            fileName:
-                'exam_timetable_${DateFormat('yyyy_MM_dd').format(DateTime.now())}.xlsx',
+      final repository = ref.read(examRepositoryProvider);
+      final exams = await repository.generateExcelData();
+
+      if (!mounted) return;
+      await showDialog(
+        context: context,
+        builder: (context) => ExcelPreviewDialog(
+          excelBytes: ExamTimetableExcel.generate(
+            exams.map((e) => Exam.fromJson(e)).toList(),
+            widget.selectedCourses,
           ),
-        );
-      }
-    } catch (error) {
+          fileName:
+              'exam_schedule_${DateFormat('yyyyMMdd').format(_selectedDate!)}.xlsx',
+        ),
+      );
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error generating Excel: $error'),
+            content: Text('Error generating Excel: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -193,66 +218,44 @@ class _ExamSchedulingDialogState extends ConsumerState<ExamSchedulingDialog> {
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Selected Courses (${widget.selectedCourses.length}):'),
-              const SizedBox(height: 8),
-              ...widget.selectedCourses.map((course) => Text(
-                    '• ${course.courseCode} - ${course.courseName} (${course.examDuration} mins)',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  )),
-              const SizedBox(height: 24),
-              // Date Selection
               ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Exam Date'),
-                subtitle: Text(
-                  _selectedDate == null
-                      ? 'Select a date'
-                      : DateFormat('EEEE, MMMM d, y').format(_selectedDate!),
-                ),
-                trailing: IconButton(
-                  icon: const Icon(Icons.calendar_today),
-                  onPressed: _selectDate,
-                ),
+                title: Text(_selectedDate == null
+                    ? 'Select Date'
+                    : DateFormat('MMM d, y').format(_selectedDate!)),
+                trailing: const Icon(Icons.calendar_today),
+                onTap: _selectDate,
               ),
-              const SizedBox(height: 16),
-              // Session Selection
-              const Text('Session'),
-              const SizedBox(height: 8),
-              SegmentedButton<ExamSession>(
-                segments: const [
-                  ButtonSegment(
-                    value: ExamSession.morning,
-                    label: Text('Morning'),
-                  ),
-                  ButtonSegment(
-                    value: ExamSession.afternoon,
-                    label: Text('Afternoon'),
-                  ),
-                ],
-                selected: {_selectedSession},
-                onSelectionChanged: (Set<ExamSession> selected) {
-                  setState(() {
-                    _selectedSession = selected.first;
-                    _selectedTime = TimeOfDay(
-                      hour: _selectedSession == ExamSession.morning ? 9 : 14,
-                      minute: 0,
+              const Divider(),
+              ListTile(
+                title: const Text('Session'),
+                trailing: DropdownButton<ExamSession>(
+                  value: _selectedSession,
+                  items: ExamSession.values.map((session) {
+                    return DropdownMenuItem(
+                      value: session,
+                      child: Text(session.name.toUpperCase()),
                     );
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-              // Time Selection
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Start Time'),
-                subtitle: Text(_selectedTime.format(context)),
-                trailing: IconButton(
-                  icon: const Icon(Icons.access_time),
-                  onPressed: _selectTime,
+                  }).toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() => _selectedSession = value);
+                    }
+                  },
                 ),
               ),
+              const Divider(),
+              ListTile(
+                title: Text('Time: ${_selectedTime.format(context)}'),
+                trailing: const Icon(Icons.access_time),
+                onTap: _selectTime,
+              ),
+              const Divider(),
+              const Text('Selected Courses:'),
+              ...widget.selectedCourses.map((course) => ListTile(
+                    title: Text(course.courseCode),
+                    subtitle: Text('Duration: ${course.examDuration} minutes'),
+                  )),
             ],
           ),
         ),
@@ -263,7 +266,7 @@ class _ExamSchedulingDialogState extends ConsumerState<ExamSchedulingDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: _selectedDate == null ? null : _scheduleExams,
+          onPressed: _scheduleExams,
           child: const Text('Schedule'),
         ),
       ],

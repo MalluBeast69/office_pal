@@ -8,23 +8,24 @@ class ExamTimetableExcel {
     final excel = Excel.createExcel();
     final sheet = excel.sheets[excel.getDefaultSheet()!]!;
 
+    // Create a map of course codes to courses for quick lookup
+    final courseMap = {for (var course in courses) course.courseCode: course};
+
     // Add headers
     final headers = [
       'Date',
-      'Session',
-      'Time',
       'Course Code',
       'Course Name',
-      'Department',
-      'Duration (mins)'
+      'Session',
+      'Time',
+      'Duration',
+      'Department'
     ];
     for (var i = 0; i < headers.length; i++) {
       final cell =
           sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0));
       cell.value = TextCellValue(headers[i]);
-      cell.cellStyle = CellStyle(
-        bold: true,
-      );
+      cell.cellStyle = CellStyle(bold: true);
     }
 
     // Sort exams by date and session
@@ -37,15 +38,15 @@ class ExamTimetableExcel {
     // Add exam data
     for (var i = 0; i < exams.length; i++) {
       final exam = exams[i];
-      final course = courses.firstWhere((c) => c.courseCode == exam.courseId);
+      final course = courseMap[exam.courseId];
       final rowData = [
         DateFormat('MMM d, y').format(exam.examDate),
+        exam.courseId,
+        course?.courseName ?? 'Unknown Course',
         exam.session,
         exam.time,
-        course.courseCode,
-        course.courseName,
-        course.deptId,
         exam.duration.toString(),
+        course?.deptId ?? 'Unknown Dept',
       ];
 
       for (var j = 0; j < rowData.length; j++) {
@@ -59,7 +60,7 @@ class ExamTimetableExcel {
     for (var i = 0; i < headers.length; i++) {
       sheet.setColumnWidth(i, 15.0);
     }
-    sheet.setColumnWidth(4, 30.0); // Make course name column wider
+    sheet.setColumnWidth(2, 30.0); // Make course name column wider
 
     return excel.encode()!;
   }

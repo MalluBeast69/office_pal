@@ -9,6 +9,7 @@ import 'package:office_pal/features/controller/domain/models/exam.dart';
 import 'package:office_pal/features/controller/presentation/providers/exam_provider.dart';
 import 'package:office_pal/features/controller/presentation/widgets/exam_schedule_preview_dialog.dart';
 import 'package:office_pal/features/controller/domain/repositories/exam_repository.dart';
+import 'package:office_pal/features/controller/presentation/widgets/excel_import_preview_dialog.dart';
 
 enum ExamType { internal, external }
 
@@ -496,7 +497,6 @@ class _ExamSchedulingPageState extends ConsumerState<ExamSchedulingPage> {
 
   Future<void> _importFromCSV() async {
     try {
-      print('Starting file picker...');
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['xlsx', 'xls', 'csv'],
@@ -571,28 +571,44 @@ class _ExamSchedulingPageState extends ConsumerState<ExamSchedulingPage> {
           return;
         }
 
-        // Schedule the imported exams
+        // Check for existing exams
         final repository = ref.read(examRepositoryProvider);
-        await repository.scheduleExams(importedExams);
+        final existingExams = await repository.getExams();
+        final existingCourses = existingExams
+            .map((e) => e['course_id'] as String)
+            .where(
+                (courseId) => importedExams.any((e) => e.courseId == courseId))
+            .toList();
 
+        // Show preview dialog
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content:
-                  Text('${importedExams.length} exams imported successfully'),
-              backgroundColor: Colors.green,
+          final result = await showDialog<bool>(
+            context: context,
+            builder: (context) => ExcelImportPreviewDialog(
+              exams: importedExams,
+              existingCourses: existingCourses,
             ),
           );
-          ref.refresh(examsProvider);
+
+          if (result == true && mounted) {
+            await repository.scheduleExams(importedExams);
+            ref.refresh(examsProvider);
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Exams imported and scheduled successfully'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
         }
       }
-    } catch (error, stackTrace) {
-      print('Error importing exams: $error');
-      print('Stack trace: $stackTrace');
+    } catch (e) {
+      print('Error importing from Excel: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error importing exams: $error'),
+            content: Text('Error importing from Excel: $e'),
             backgroundColor: Colors.red,
           ),
         );

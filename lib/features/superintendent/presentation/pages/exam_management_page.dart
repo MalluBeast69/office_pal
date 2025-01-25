@@ -8,10 +8,14 @@ import 'package:office_pal/features/controller/presentation/providers/exam_provi
 import 'package:office_pal/features/controller/presentation/providers/course_provider.dart';
 import 'package:office_pal/features/controller/domain/models/exam.dart';
 import 'package:office_pal/features/controller/domain/models/course.dart';
-import 'package:office_pal/features/controller/presentation/widgets/excel_preview_dialog.dart';
+import 'package:office_pal/features/controller/presentation/widgets/excel_preview_dialog.dart'
+    as preview;
 import 'package:office_pal/features/controller/utils/exam_timetable_excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:excel/excel.dart' as excel;
+import 'package:office_pal/features/controller/presentation/widgets/excel_import_preview_dialog.dart';
+import 'package:office_pal/features/controller/domain/services/holiday_service.dart';
+import 'package:office_pal/features/controller/presentation/providers/holiday_provider.dart';
 
 enum ExamSortOption {
   date('Date'),
@@ -614,7 +618,7 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
 
       await showDialog(
         context: context,
-        builder: (context) => ExcelPreviewDialog(
+        builder: (context) => preview.ExcelPreviewDialog(
           excelBytes: ExamTimetableExcel.generate(
             exams.map((e) => Exam.fromJson(e)).toList(),
             courses.map((c) => Course.fromJson(c)).toList(),
@@ -634,6 +638,274 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
     }
   }
 
+  Future<void> _importFromExcel() async {
+    try {
+      print('Starting Excel import process...');
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['xlsx', 'xls'],
+        withData: true,
+      );
+
+      if (result == null) {
+        print('No file selected');
+        return;
+      }
+
+      final file = result.files.first;
+      print('File selected: ${file.name}');
+
+      if (file.bytes == null) {
+        throw Exception('Could not read file data');
+      }
+
+      final excelDoc = excel.Excel.decodeBytes(file.bytes!);
+      final sheet = excelDoc.tables[excelDoc.tables.keys.first]!;
+      print('Sheet rows: ${sheet.rows.length}');
+
+      List<Exam> importedExams = [];
+
+      // Skip header row
+      for (var i = 1; i < sheet.rows.length; i++) {
+        final row = sheet.rows[i];
+        if (row.isEmpty || row[0]?.value == null) {
+          print('Skipping empty row $i');
+          continue;
+        }
+
+        try {
+          final courseId = row[0]!.value.toString();
+          final date = DateTime.parse(row[1]!.value.toString());
+          final session = row[2]!.value.toString().toUpperCase();
+          final time = row[3]!.value.toString();
+          final duration = int.parse(row[4]!.value.toString());
+
+          print(
+              'Parsed row $i: courseId=$courseId, date=$date, session=$session, time=$time, duration=$duration');
+
+          importedExams.add(Exam(
+            examId:
+                'EX$courseId${DateTime.now().millisecondsSinceEpoch % 10000}',
+            courseId: courseId,
+            examDate: date,
+            session: session,
+            time: time,
+            duration: duration,
+          ));
+        } catch (e, stackTrace) {
+          print('Error parsing row $i: $e');
+          print('Stack trace: $stackTrace');
+          continue;
+        }
+      }
+
+      if (importedExams.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No valid exams found in the file'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Check for existing exams
+      final repository = ref.read(examRepositoryProvider);
+      final existingExams = await repository.getExams();
+      final existingCourses = existingExams
+          .map((e) => e['course_id'] as String)
+          .where((courseId) => importedExams.any((e) => e.courseId == courseId))
+          .toList();
+
+      // Show preview dialog
+      if (mounted) {
+        final result = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Import Preview'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blue.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Total Exams: ${importedExams.length}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          if (existingCourses.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Warning: ${existingCourses.length} courses already have exams scheduled',
+                              style: TextStyle(
+                                color: Colors.red.shade900,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              existingCourses.join(', '),
+                              style: TextStyle(
+                                color: Colors.red.shade700,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // Group exams by date
+                    ...groupAndSortExams(importedExams).entries.map((entry) {
+                      final date = entry.key;
+                      final dateExams = entry.value;
+                      final isSunday = date.weekday == DateTime.sunday;
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              DateFormat('EEEE, MMM d, y').format(date),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                          if (isSunday)
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              margin: const EdgeInsets.only(bottom: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                                border:
+                                    Border.all(color: Colors.orange.shade300),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.warning_amber_rounded,
+                                      color: Colors.orange.shade700),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                      'Warning: Exams scheduled on Sunday'),
+                                ],
+                              ),
+                            ),
+                          ...dateExams.map((exam) => Card(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                child: ListTile(
+                                  title: Row(
+                                    children: [
+                                      Text(exam.courseId),
+                                      if (existingCourses
+                                          .contains(exam.courseId)) ...[
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.red.shade100,
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                            border: Border.all(
+                                              color: Colors.red.shade300,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'Already Scheduled',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.red.shade900,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  subtitle: Text(
+                                    '${exam.session} - ${exam.time} (${exam.duration} mins)',
+                                  ),
+                                ),
+                              )),
+                          const Divider(),
+                        ],
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: existingCourses.isEmpty
+                    ? () => Navigator.of(context).pop(true)
+                    : null,
+                child: const Text('Confirm'),
+              ),
+            ],
+          ),
+        );
+
+        if (result == true && mounted) {
+          await repository.scheduleExams(importedExams);
+          ref.refresh(examsProvider);
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Exams imported and scheduled successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('Error importing from Excel: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error importing from Excel: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Map<DateTime, List<Exam>> groupAndSortExams(List<Exam> exams) {
+    final examsByDate = <DateTime, List<Exam>>{};
+    for (var exam in exams) {
+      final date = DateTime(
+        exam.examDate.year,
+        exam.examDate.month,
+        exam.examDate.day,
+      );
+      examsByDate.putIfAbsent(date, () => []).add(exam);
+    }
+    return Map.fromEntries(
+        examsByDate.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final examsAsync = ref.watch(examsProvider);
@@ -643,6 +915,11 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
       appBar: AppBar(
         title: const Text('Exam Management'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.upload_file),
+            tooltip: 'Import Excel',
+            onPressed: _importFromExcel,
+          ),
           IconButton(
             icon: const Icon(Icons.calendar_month),
             tooltip: 'Generate Timetable',

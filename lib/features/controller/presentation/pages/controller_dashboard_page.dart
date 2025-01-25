@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:office_pal/features/controller/presentation/pages/exam_scheduling_page.dart';
 import 'package:office_pal/features/controller/presentation/providers/exam_provider.dart';
+import 'package:office_pal/features/controller/presentation/providers/holiday_provider.dart';
+import 'package:office_pal/features/controller/domain/services/holiday_service.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:office_pal/features/controller/presentation/pages/exam_management_page.dart';
@@ -114,6 +116,7 @@ class _ControllerDashboardPageState
   CalendarFormat _calendarFormat = CalendarFormat.month;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
+  bool _showCalendar = true;
 
   Future<void> _signOut(BuildContext context) async {
     try {
@@ -133,9 +136,32 @@ class _ControllerDashboardPageState
     }
   }
 
+  List<dynamic> _getEventsForDay(
+      DateTime day, List<Map<String, dynamic>> exams, List<Holiday> holidays) {
+    final events = <dynamic>[];
+
+    // Add exams
+    events.addAll(exams.where((exam) {
+      final examDate = DateTime.parse(exam['exam_date']);
+      return examDate.year == day.year &&
+          examDate.month == day.month &&
+          examDate.day == day.day;
+    }));
+
+    // Add holidays
+    events.addAll(holidays.where((holiday) =>
+        holiday.date.year == day.year &&
+        holiday.date.month == day.month &&
+        holiday.date.day == day.day));
+
+    return events;
+  }
+
   @override
   Widget build(BuildContext context) {
+    print('Building ControllerDashboardPage');
     final examsAsync = ref.watch(examsProvider);
+    final holidaysAsync = ref.watch(holidaysProvider(_focusedDay.year));
 
     return Scaffold(
       appBar: AppBar(
@@ -146,6 +172,14 @@ class _ControllerDashboardPageState
         title: const Text('Controller Dashboard'),
         centerTitle: true,
         actions: [
+          IconButton(
+            icon: Icon(_showCalendar ? Icons.view_list : Icons.calendar_today),
+            onPressed: () {
+              setState(() {
+                _showCalendar = !_showCalendar;
+              });
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () => _signOut(context),
@@ -166,61 +200,103 @@ class _ControllerDashboardPageState
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
-            Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: examsAsync.when(
-                  data: (exams) => TableCalendar(
-                    firstDay:
-                        DateTime.now().subtract(const Duration(days: 365)),
-                    lastDay: DateTime.now().add(const Duration(days: 365)),
-                    focusedDay: _focusedDay,
-                    selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-                    calendarFormat: _calendarFormat,
-                    onFormatChanged: (format) {
-                      setState(() {
-                        _calendarFormat = format;
-                      });
+            if (_showCalendar)
+              Card(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: examsAsync.when(
+                    data: (exams) {
+                      print('Exams data received: ${exams.length} exams');
+                      return holidaysAsync.when(
+                        data: (holidays) {
+                          print(
+                              'Holidays data received: ${holidays.length} holidays');
+                          return Column(
+                            children: [
+                              TableCalendar(
+                                firstDay: DateTime.now()
+                                    .subtract(const Duration(days: 365)),
+                                lastDay: DateTime.now()
+                                    .add(const Duration(days: 365)),
+                                focusedDay: _focusedDay,
+                                selectedDayPredicate: (day) =>
+                                    isSameDay(_selectedDay, day),
+                                calendarFormat: _calendarFormat,
+                                onFormatChanged: (format) {
+                                  setState(() {
+                                    _calendarFormat = format;
+                                  });
+                                },
+                                eventLoader: (day) {
+                                  final events =
+                                      _getEventsForDay(day, exams, holidays);
+                                  print(
+                                      'Events for ${day.toString()}: ${events.length}');
+                                  return events;
+                                },
+                                calendarStyle: CalendarStyle(
+                                  markerSize: 8,
+                                  markerDecoration: BoxDecoration(
+                                    color: Colors.blue.shade700,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  markersMaxCount: 3,
+                                  markerMargin: const EdgeInsets.symmetric(
+                                      horizontal: 0.5),
+                                  holidayTextStyle:
+                                      const TextStyle(color: Colors.red),
+                                  holidayDecoration: const BoxDecoration(),
+                                ),
+                                holidayPredicate: (day) {
+                                  return holidays.any((holiday) =>
+                                      holiday.date.year == day.year &&
+                                      holiday.date.month == day.month &&
+                                      holiday.date.day == day.day);
+                                },
+                                onDaySelected: (selectedDay, focusedDay) {
+                                  setState(() {
+                                    _selectedDay = selectedDay;
+                                    _focusedDay = focusedDay;
+                                  });
+                                  _showEventDialog(
+                                      context, selectedDay, exams, holidays);
+                                },
+                              ),
+                            ],
+                          );
+                        },
+                        loading: () => const SizedBox(
+                          height: 300,
+                          child: Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                        ),
+                        error: (error, stack) {
+                          print('Error loading exams: $error');
+                          print('Stack trace: $stack');
+                          return Center(
+                            child: Text('Error loading exams: $error'),
+                          );
+                        },
+                      );
                     },
-                    eventLoader: (day) {
-                      return exams.where((exam) {
-                        final examDate = DateTime.parse(exam['exam_date']);
-                        return examDate.year == day.year &&
-                            examDate.month == day.month &&
-                            examDate.day == day.day;
-                      }).toList();
-                    },
-                    calendarStyle: const CalendarStyle(
-                      markerSize: 8,
-                      markerDecoration: BoxDecoration(
-                        color: Colors.blue,
-                        shape: BoxShape.circle,
+                    loading: () => const SizedBox(
+                      height: 300,
+                      child: Center(
+                        child: CircularProgressIndicator(),
                       ),
                     ),
-                    onDaySelected: (selectedDay, focusedDay) {
-                      setState(() {
-                        _selectedDay = selectedDay;
-                        _focusedDay = focusedDay;
-                      });
-                      showDialog(
-                        context: context,
-                        builder: (context) => ExamDateDialog(
-                          selectedDate: selectedDay,
-                          exams: exams,
-                        ),
+                    error: (error, stack) {
+                      print('Error loading exams: $error');
+                      print('Stack trace: $stack');
+                      return Center(
+                        child: Text('Error loading exams: $error'),
                       );
                     },
                   ),
-                  loading: () => const Center(
-                    child: CircularProgressIndicator(),
-                  ),
-                  error: (error, stack) => Center(
-                    child: Text('Error: $error'),
-                  ),
                 ),
               ),
-            ),
             const SizedBox(height: 32),
             LayoutBuilder(builder: (context, constraints) {
               final isDesktop = constraints.maxWidth > 600;
@@ -265,6 +341,48 @@ class _ControllerDashboardPageState
         ),
       ),
     );
+  }
+
+  void _showEventDialog(BuildContext context, DateTime selectedDay,
+      List<Map<String, dynamic>> exams, List<Holiday> holidays) {
+    final events = _getEventsForDay(selectedDay, exams, holidays);
+    if (events.isNotEmpty) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(DateFormat('MMM d, y').format(selectedDay)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ...events.map((event) {
+                if (event is Map<String, dynamic>) {
+                  final course = event['course'] as Map<String, dynamic>;
+                  return ListTile(
+                    leading: const Icon(Icons.school),
+                    title: Text(course['course_code'] as String),
+                    subtitle: Text('${event['session']} - ${event['time']}'),
+                  );
+                } else if (event is Holiday) {
+                  return ListTile(
+                    leading: const Icon(Icons.celebration, color: Colors.red),
+                    title: Text(event.name),
+                    subtitle: Text(event.type),
+                  );
+                }
+                return const SizedBox.shrink();
+              }),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Widget _buildDashboardCard(

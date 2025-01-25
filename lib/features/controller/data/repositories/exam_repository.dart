@@ -9,7 +9,7 @@ class ExamRepository {
   Future<void> scheduleExams(List<Exam> exams) async {
     final courseIds = exams.map((e) => e.courseId).toList();
     final existingExams =
-        await _supabase.from('exam').select().inFilter('course_id', courseIds);
+        await _supabase.from('exam').select().in_('course_id', courseIds);
 
     if (existingExams.isNotEmpty) {
       final conflictingCourses =

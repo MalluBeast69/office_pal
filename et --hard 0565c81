@@ -1,0 +1,5 @@
+[33m0565c81[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m feat: Revamp exam scheduling page UI and filtering
+[33m48fb23a[m Update GitHub Pages deployment with new web build
+[33m7b3fa1e[m feat: Update main.dart to go to login first and add GitHub Actions workflow
+[33m9f6e089[m feat: Add loading screen and update web app
+[33m32dca1c[m Deploy web app to GitHub Pages

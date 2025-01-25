@@ -5,10 +5,19 @@ import 'package:office_pal/features/controller/domain/models/exam.dart';
 final examRepositoryProvider =
     Provider<ExamRepository>((ref) => ExamRepository());
 
-final examsProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  final repository = ref.watch(examRepositoryProvider);
-  return repository.getExams();
+final examsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  try {
+    print('ExamsProvider: Fetching exams...');
+    final repository = ref.read(examRepositoryProvider);
+    final exams = await repository.getExams();
+    print('ExamsProvider: Successfully fetched ${exams.length} exams');
+    return exams;
+  } catch (e, stackTrace) {
+    print('ExamsProvider: Error fetching exams:');
+    print('Error: $e');
+    print('Stack trace: $stackTrace');
+    rethrow;
+  }
 });
 
 final selectedExamProvider =

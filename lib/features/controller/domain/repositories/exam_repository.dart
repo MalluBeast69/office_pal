@@ -120,7 +120,7 @@ class ExamRepository {
     final response = await _supabase
         .from('exam_history')
         .select('*, course!inner(*)')
-        .isFilter('deleted_at', null)
+        .is_('deleted_at', null)
         .order('exam_date');
 
     return List<Map<String, dynamic>>.from(response);

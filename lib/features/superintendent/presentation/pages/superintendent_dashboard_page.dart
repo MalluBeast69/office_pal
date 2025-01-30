@@ -7,6 +7,8 @@ import 'course_management_page.dart';
 import 'department_management_page.dart';
 import 'hall_management_page.dart';
 import 'exam_management_page.dart';
+import 'seating_arrangement/select_exam_page.dart';
+import 'seating_management_page.dart';
 import 'dart:convert';
 import 'dart:developer' as developer;
 
@@ -28,6 +30,8 @@ class _SuperintendentDashboardPageState
     'departments': 0,
     'faculty': 0,
     'halls': 0,
+    'exams': 0,
+    'seating': 0,
   };
 
   @override
@@ -71,6 +75,7 @@ class _SuperintendentDashboardPageState
             'faculty': facultyResponse.length,
             'halls': hallResponse.length,
             'exams': examResponse.length,
+            'seating': 0,
           };
           notifications =
               List<Map<String, dynamic>>.from(notificationsResponse);
@@ -142,12 +147,12 @@ class _SuperintendentDashboardPageState
         ).then((_) => _loadData());
         break;
       case 'seating':
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Seating arrangement feature coming soon'),
-            backgroundColor: Colors.orange,
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const SeatingManagementPage(),
           ),
-        );
+        ).then((_) => _loadData());
         break;
     }
   }

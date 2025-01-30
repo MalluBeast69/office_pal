@@ -6,7 +6,12 @@ import 'dart:developer' as developer;
 import 'student_exam_registration_page.dart';
 
 class StudentManagementPage extends ConsumerStatefulWidget {
-  const StudentManagementPage({super.key});
+  final String? initialDepartment;
+
+  const StudentManagementPage({
+    super.key,
+    this.initialDepartment,
+  });
 
   @override
   ConsumerState<StudentManagementPage> createState() =>
@@ -17,6 +22,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
   List<Map<String, dynamic>> students = [];
   List<Map<String, dynamic>> filteredStudents = [];
   bool isLoading = true;
+  bool isInitializing = true;
   String searchQuery = '';
   String? selectedDepartment;
   int? selectedSemester;
@@ -28,6 +34,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
   @override
   void initState() {
     super.initState();
+    selectedDepartment = widget.initialDepartment;
     loadStudents();
   }
 
@@ -89,8 +96,17 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
           ..sort();
         semesters = students.map((s) => s['semester'] as int).toSet().toList()
           ..sort();
+
+        // If initialDepartment is set but not in departments list, add it
+        if (selectedDepartment != null &&
+            !departments.contains(selectedDepartment)) {
+          departments.add(selectedDepartment!);
+          departments.sort();
+        }
+
         filterStudents();
         isLoading = false;
+        isInitializing = false;
       });
     } catch (error) {
       developer.log('Error loading data: $error', error: error);
@@ -102,7 +118,10 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
           ),
         );
       }
-      setState(() => isLoading = false);
+      setState(() {
+        isLoading = false;
+        isInitializing = false;
+      });
     }
   }
 
@@ -643,6 +662,14 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (isInitializing) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     final isSmallScreen = MediaQuery.of(context).size.width < 500;
 
     return Scaffold(
@@ -1567,15 +1594,16 @@ class _AddStudentDialogState extends State<AddStudentDialog> {
   }
 
   Future<void> _addStudent() async {
-    if (!_formKey.currentState!.validate() || _generatedRegNo == null) return;
+    if (!_formKey.currentState!.validate()) return;
+    if (_selectedDepartment == null) return;
 
     setState(() => _isLoading = true);
     try {
-      // Double check if reg no is still available
+      // Check if registration number is still available
       final existingStudent = await Supabase.instance.client
           .from('student')
           .select()
-          .eq('student_reg_no', _generatedRegNo)
+          .eq('student_reg_no', _generatedRegNo as Object)
           .maybeSingle();
 
       if (existingStudent != null) {

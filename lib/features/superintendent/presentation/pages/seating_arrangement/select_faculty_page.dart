@@ -23,7 +23,7 @@ class _SelectFacultyPageState extends ConsumerState<SelectFacultyPage> {
   List<Map<String, dynamic>> _faculty = [];
   bool _isLoading = true;
   String _searchQuery = '';
-  Map<String, String> _hallFacultyMap = {};
+  final Map<String, String> _hallFacultyMap = {};
   int _requiredFaculty = 0;
 
   @override

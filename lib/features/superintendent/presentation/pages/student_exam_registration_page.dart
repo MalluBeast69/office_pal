@@ -151,6 +151,7 @@ class _StudentExamRegistrationPageState
 
   Future<void> _registerStudent() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_selectedStudent == null || _selectedCourse == null) return;
 
     setState(() => _isLoading = true);
     try {
@@ -158,8 +159,8 @@ class _StudentExamRegistrationPageState
       final existingRegistration = await Supabase.instance.client
           .from('registered_students')
           .select()
-          .eq('student_reg_no', _selectedStudent)
-          .eq('course_code', _selectedCourse)
+          .eq('student_reg_no', _selectedStudent as Object)
+          .eq('course_code', _selectedCourse as Object)
           .maybeSingle();
 
       if (existingRegistration != null) {

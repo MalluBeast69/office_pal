@@ -21,7 +21,7 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
   final TextEditingController _searchController = TextEditingController();
   bool _isLoading = false;
   bool _isCalendarVisible = false;
-  DateTime _focusedDay = DateTime.now();
+  final DateTime _focusedDay = DateTime.now();
   DateTime? _selectedStartDate;
   String? _selectedSession;
   Map<String, Map<String, List<Map<String, dynamic>>>> _filteredArrangements =
@@ -500,7 +500,7 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
         Padding(
           padding: const EdgeInsets.all(16),
           child: Text(
-            'Hall ${_selectedHall}',
+            'Hall $_selectedHall',
             style: Theme.of(context).textTheme.headlineSmall,
           ),
         ),
@@ -1183,7 +1183,7 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                             ),
                             title: Text(courseId),
                             subtitle: Text(
-                              '${exam['time']} | ${studentCount} students',
+                              '${exam['time']} | $studentCount students',
                               style: TextStyle(
                                 color: Colors.grey.shade600,
                                 fontSize: 13,

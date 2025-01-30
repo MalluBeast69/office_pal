@@ -1,0 +1,7 @@
+student_reg_no,student_name,dept_id,semester
+THAWSCS001,John Doe,CSE,4
+THAWSCS002,Jane Smith,CSE,4
+THAWSEC001,Alice Johnson,ECE,3
+THAWSEC002,Bob Wilson,ECE,3
+THAWSME001,Charlie Brown,ME,2
+THAWSME002,Diana Prince,ME,2 

@@ -644,7 +644,7 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                 // Calendar and session selector
                 Container(
                   padding: const EdgeInsets.all(16),
-                  color: Theme.of(context).colorScheme.surfaceVariant,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -930,7 +930,7 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                                                             .primaryContainer
                                                     : Theme.of(context)
                                                         .colorScheme
-                                                        .surfaceVariant,
+                                                        .surfaceContainerHighest,
                                                 borderRadius:
                                                     BorderRadius.circular(8),
                                                 border: Border.all(

@@ -21,7 +21,7 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
   List<Map<String, dynamic>> _halls = [];
   bool _isLoading = true;
   String _searchQuery = '';
-  Set<String> _selectedHalls = {};
+  final Set<String> _selectedHalls = {};
   int _totalCapacityNeeded = 0;
   int _selectedCapacity = 0;
 

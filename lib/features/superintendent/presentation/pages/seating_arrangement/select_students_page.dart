@@ -17,7 +17,7 @@ class _SelectStudentsPageState extends ConsumerState<SelectStudentsPage> {
   bool _isLoading = true;
   String _searchQuery = '';
   bool _showRegularOnly = false;
-  Set<String> _selectedStudents = {};
+  final Set<String> _selectedStudents = {};
 
   @override
   void initState() {

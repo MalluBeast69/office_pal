@@ -31,7 +31,7 @@ class _StudentDashboardPageState extends ConsumerState<StudentDashboardPage> {
   bool isLoading = false;
   List<Map<String, dynamic>> examSeatingArrangements = [];
   final _scrollController = ScrollController();
-  bool _isLoading = false;
+  final bool _isLoading = false;
   Map<String, dynamic>? _selectedExam;
   String? _studentRegNo;
   final TextEditingController _searchController = TextEditingController();

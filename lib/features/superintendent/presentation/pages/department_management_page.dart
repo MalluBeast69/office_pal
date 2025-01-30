@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:developer' as developer;
+import 'student_management_page.dart';
+import 'faculty_management_page.dart';
+import 'course_management_page.dart';
 
 class DepartmentManagementPage extends ConsumerStatefulWidget {
   const DepartmentManagementPage({super.key});
@@ -28,15 +31,12 @@ class _DepartmentManagementPageState
     try {
       developer.log('Loading departments...');
 
-      // Load departments with course and student counts
       final departmentsResponse =
           await Supabase.instance.client.from('departments').select('''
-            dept_id,
-            dept_name,
-            created_at,
-            updated_at,
-            courses:course!dept_id(course_code),
-            students:student!dept_id(student_reg_no)
+            *,
+            courses:course(course_code),
+            students:student(student_reg_no),
+            faculty:faculty(faculty_id)
           ''').order('dept_id');
 
       developer.log('Loaded ${departmentsResponse.length} departments');
@@ -183,8 +183,281 @@ class _DepartmentManagementPageState
     }
   }
 
+  void _showDepartmentInfo(Map<String, dynamic> department) {
+    final courses = (department['courses'] ?? []) as List;
+    final students = (department['students'] ?? []) as List;
+    final faculty = (department['faculty'] ?? []) as List;
+    final createdAt = DateTime.parse(department['created_at']);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        contentPadding: const EdgeInsets.all(24),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    department['dept_name'],
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.edit),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _addEditDepartment(department: department);
+                  },
+                  tooltip: 'Edit Department',
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.orange,
+                    ),
+                  ),
+                  child: Text(
+                    department['dept_id'],
+                    style: const TextStyle(
+                      color: Colors.orange,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Created ${_formatDate(createdAt)}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            // Statistics Row
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: IntrinsicHeight(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildStatColumn(
+                      icon: Icons.people,
+                      value: students.length.toString(),
+                      label: 'Students',
+                    ),
+                    VerticalDivider(color: Colors.grey[300], width: 32),
+                    _buildStatColumn(
+                      icon: Icons.school,
+                      value: faculty.length.toString(),
+                      label: 'Faculty',
+                    ),
+                    VerticalDivider(color: Colors.grey[300], width: 32),
+                    _buildStatColumn(
+                      icon: Icons.book,
+                      value: courses.length.toString(),
+                      label: 'Courses',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            // Navigation Cards
+            _buildInfoCard(
+              icon: Icons.people,
+              title: 'Manage Students',
+              count: students.length,
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => StudentManagementPage(
+                      initialDepartment: department['dept_id'],
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            _buildInfoCard(
+              icon: Icons.school,
+              title: 'Manage Faculty',
+              count: faculty.length,
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => FacultyManagementPage(
+                      initialDepartment: department['dept_id'],
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            _buildInfoCard(
+              icon: Icons.book,
+              title: 'Manage Courses',
+              count: courses.length,
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => CourseManagementPage(
+                      initialDepartment: department['dept_id'],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatColumn({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 24, color: Colors.grey[700]),
+        const SizedBox(height: 8),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 14,
+            color: Colors.grey[600],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inDays > 365) {
+      return '${(difference.inDays / 365).floor()} years ago';
+    } else if (difference.inDays > 30) {
+      return '${(difference.inDays / 30).floor()} months ago';
+    } else if (difference.inDays > 0) {
+      return '${difference.inDays} days ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours} hours ago';
+    } else {
+      return '${difference.inMinutes} minutes ago';
+    }
+  }
+
+  Widget _buildInfoCard({
+    required IconData icon,
+    required String title,
+    required int count,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 24, color: Colors.grey[700]),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      '$count ${title.toLowerCase()}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios,
+                size: 16,
+                color: Colors.grey[400],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final crossAxisCount = (screenWidth / 280).floor();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Department Management'),
@@ -214,79 +487,188 @@ class _DepartmentManagementPageState
               },
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Text(
+              'Showing ${filteredDepartments.length} departments',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
           Expanded(
             child: isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : filteredDepartments.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No departments found',
-                          style: TextStyle(fontSize: 16),
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.business_outlined,
+                                size: 64, color: Colors.grey[400]),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No departments found',
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
                         ),
                       )
-                    : ListView.builder(
+                    : GridView.builder(
+                        padding: const EdgeInsets.all(16),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: crossAxisCount,
+                          childAspectRatio: 1.2,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                        ),
                         itemCount: filteredDepartments.length,
-                        padding: const EdgeInsets.all(8),
                         itemBuilder: (context, index) {
                           final department = filteredDepartments[index];
                           final courses = department['courses'] as List;
                           final students = department['students'] as List;
+                          final faculty = department['faculty'] as List;
                           final courseCount = courses.length;
                           final studentCount = students.length;
+                          final facultyCount = faculty.length;
 
                           return Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              title: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(department['dept_name']),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.orange.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: Colors.orange),
-                                    ),
-                                    child: Text(
-                                      department['dept_id'],
-                                      style: const TextStyle(
-                                        color: Colors.orange,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                            elevation: 2,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(
+                                color: Colors.orange.withOpacity(0.3),
+                                width: 1,
                               ),
-                              subtitle: Text(
-                                'Courses: $courseCount\n'
-                                'Students: $studentCount',
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.edit),
-                                    tooltip: 'Edit Department',
-                                    onPressed: () => _addEditDepartment(
-                                        department: department),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete,
-                                        color: Colors.red),
-                                    tooltip: 'Delete Department',
-                                    onPressed:
-                                        courseCount > 0 || studentCount > 0
-                                            ? null
-                                            : () => _deleteDepartment(
-                                                department['dept_id']),
-                                  ),
-                                ],
+                            ),
+                            child: InkWell(
+                              onTap: () => _showDepartmentInfo(department),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                department['dept_name'],
+                                                style: const TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 4,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.orange
+                                                      .withOpacity(0.1),
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                  border: Border.all(
+                                                    color: Colors.orange,
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  department['dept_id'],
+                                                  style: const TextStyle(
+                                                    color: Colors.orange,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuButton(
+                                          icon: const Icon(Icons.more_vert),
+                                          itemBuilder: (context) => [
+                                            const PopupMenuItem(
+                                              value: 'edit',
+                                              child: Row(
+                                                children: [
+                                                  Icon(Icons.edit),
+                                                  SizedBox(width: 8),
+                                                  Text('Edit'),
+                                                ],
+                                              ),
+                                            ),
+                                            if (courseCount == 0 &&
+                                                studentCount == 0)
+                                              const PopupMenuItem(
+                                                value: 'delete',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.delete,
+                                                      color: Colors.red,
+                                                    ),
+                                                    SizedBox(width: 8),
+                                                    Text(
+                                                      'Delete',
+                                                      style: TextStyle(
+                                                        color: Colors.red,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                          ],
+                                          onSelected: (value) {
+                                            if (value == 'edit') {
+                                              _addEditDepartment(
+                                                  department: department);
+                                            } else if (value == 'delete') {
+                                              _deleteDepartment(
+                                                  department['dept_id']);
+                                            }
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                    const Spacer(),
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceAround,
+                                      children: [
+                                        _buildStatItem(
+                                          icon: Icons.book,
+                                          value: courseCount.toString(),
+                                          label: 'Courses',
+                                        ),
+                                        _buildStatItem(
+                                          icon: Icons.school,
+                                          value: facultyCount.toString(),
+                                          label: 'Faculty',
+                                        ),
+                                        _buildStatItem(
+                                          icon: Icons.people,
+                                          value: studentCount.toString(),
+                                          label: 'Students',
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           );
@@ -295,6 +677,33 @@ class _DepartmentManagementPageState
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildStatItem({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    return Column(
+      children: [
+        Icon(icon, size: 20, color: Colors.grey[600]),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+          ),
+        ),
+      ],
     );
   }
 }

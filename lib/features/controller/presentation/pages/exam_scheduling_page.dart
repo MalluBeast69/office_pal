@@ -232,9 +232,9 @@ class _ExamSchedulingPageState extends ConsumerState<ExamSchedulingPage> {
                                   tapTargetSize:
                                       MaterialTapTargetSize.shrinkWrap,
                                   minimumSize:
-                                      MaterialStateProperty.all(Size.zero),
-                                  padding: MaterialStateProperty.all(
-                                      EdgeInsets.symmetric(horizontal: 16)),
+                                      WidgetStateProperty.all(Size.zero),
+                                  padding: WidgetStateProperty.all(
+                                      const EdgeInsets.symmetric(horizontal: 16)),
                                 ),
                                 selected: {externalType},
                                 onSelectionChanged:

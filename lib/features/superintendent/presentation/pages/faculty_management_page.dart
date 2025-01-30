@@ -5,7 +5,12 @@ import 'package:file_picker/file_picker.dart';
 import 'dart:developer' as developer;
 
 class FacultyManagementPage extends ConsumerStatefulWidget {
-  const FacultyManagementPage({super.key});
+  final String? initialDepartment;
+
+  const FacultyManagementPage({
+    super.key,
+    this.initialDepartment,
+  });
 
   @override
   ConsumerState<FacultyManagementPage> createState() =>
@@ -27,6 +32,7 @@ class _FacultyManagementPageState extends ConsumerState<FacultyManagementPage> {
   @override
   void initState() {
     super.initState();
+    selectedDepartment = widget.initialDepartment;
     _loadData();
   }
 

@@ -4,7 +4,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:developer' as developer;
 
 class CourseManagementPage extends ConsumerStatefulWidget {
-  const CourseManagementPage({super.key});
+  final String? initialDepartment;
+
+  const CourseManagementPage({
+    super.key,
+    this.initialDepartment,
+  });
 
   @override
   ConsumerState<CourseManagementPage> createState() =>
@@ -18,17 +23,21 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
   List<String> departments = [];
   String? selectedDepartment;
   String? selectedCourseType;
+  String? selectedSemester;
   final _formKey = GlobalKey<FormState>();
   final _courseCodeController = TextEditingController();
   final _courseNameController = TextEditingController();
   final _deptIdController = TextEditingController();
   final _creditController = TextEditingController();
+  final _semesterController = TextEditingController();
 
   final List<String> courseTypes = ['major', 'minor1', 'minor2', 'common'];
+  final List<String> semesters = ['1', '2', '3', '4', '5', '6', '7', '8'];
 
   @override
   void initState() {
     super.initState();
+    selectedDepartment = widget.initialDepartment;
     _loadCourses();
   }
 
@@ -38,6 +47,7 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
     _courseNameController.dispose();
     _deptIdController.dispose();
     _creditController.dispose();
+    _semesterController.dispose();
     super.dispose();
   }
 
@@ -48,7 +58,9 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
             course['dept_id'] == selectedDepartment;
         bool matchesCourseType = selectedCourseType == null ||
             course['course_type'] == selectedCourseType;
-        return matchesDepartment && matchesCourseType;
+        bool matchesSemester = selectedSemester == null ||
+            course['semester'].toString() == selectedSemester;
+        return matchesDepartment && matchesCourseType && matchesSemester;
       }).toList();
     });
   }
@@ -57,6 +69,7 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
     setState(() {
       selectedDepartment = null;
       selectedCourseType = null;
+      selectedSemester = null;
       filteredCourses = List.from(courses);
     });
   }
@@ -69,17 +82,21 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
           .select()
           .order('course_code');
 
+      final departmentsResponse = await Supabase.instance.client
+          .from('departments')
+          .select()
+          .order('dept_name');
+
       if (mounted) {
         setState(() {
           courses = List<Map<String, dynamic>>.from(response);
-          filteredCourses = List.from(courses);
-          // Extract unique departments
-          departments = courses
-              .map((course) => course['dept_id'].toString())
+          departments = List<Map<String, dynamic>>.from(departmentsResponse)
+              .map((dept) => dept['dept_id'].toString())
               .toSet()
-              .toList()
-            ..sort();
+              .toList();
+          filteredCourses = List.from(courses);
           isLoading = false;
+          _applyFilters();
         });
       }
     } catch (error) {
@@ -103,9 +120,32 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
       _courseNameController.text = course['course_name'];
       _deptIdController.text = course['dept_id'];
       _creditController.text = course['credit'].toString();
+      _semesterController.text = course['semester']?.toString() ?? '1';
       selectedCourseType = course['course_type'];
     } else {
       _clearForm();
+    }
+
+    // Function to generate course code
+    void generateCourseCode(String deptId) async {
+      if (!isEditing) {
+        try {
+          // Get the count of existing courses for this department
+          final response = await Supabase.instance.client
+              .from('course')
+              .select('course_code')
+              .eq('dept_id', deptId);
+
+          final existingCourses = List<Map<String, dynamic>>.from(response);
+          final courseCount = existingCourses.length + 1;
+
+          // Generate code: DEPT + Number (e.g., CSE101)
+          final newCode = '$deptId${courseCount.toString().padLeft(3, '0')}';
+          _courseCodeController.text = newCode;
+        } catch (error) {
+          developer.log('Error generating course code: $error');
+        }
+      }
     }
 
     showDialog(
@@ -117,10 +157,42 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (!isEditing)
+                DropdownButtonFormField<String>(
+                  value: departments.contains(selectedDepartment)
+                      ? selectedDepartment
+                      : null,
+                  decoration: const InputDecoration(
+                    labelText: 'Department',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text('All Departments'),
+                    ),
+                    ...departments.map((dept) => DropdownMenuItem(
+                          value: dept,
+                          child: Text(dept),
+                        )),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        selectedDepartment = value;
+                        generateCourseCode(value);
+                      });
+                    }
+                  },
+                ),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _courseCodeController,
-                decoration: const InputDecoration(labelText: 'Course Code'),
-                enabled: !isEditing,
+                decoration: const InputDecoration(
+                  labelText: 'Course Code',
+                  border: OutlineInputBorder(),
+                ),
+                enabled: false,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter course code';
@@ -128,9 +200,13 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
                   return null;
                 },
               ),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _courseNameController,
-                decoration: const InputDecoration(labelText: 'Course Name'),
+                decoration: const InputDecoration(
+                  labelText: 'Course Name',
+                  border: OutlineInputBorder(),
+                ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter course name';
@@ -138,19 +214,13 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
                   return null;
                 },
               ),
-              TextFormField(
-                controller: _deptIdController,
-                decoration: const InputDecoration(labelText: 'Department ID'),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter department ID';
-                  }
-                  return null;
-                },
-              ),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _creditController,
-                decoration: const InputDecoration(labelText: 'Credits'),
+                decoration: const InputDecoration(
+                  labelText: 'Credits',
+                  border: OutlineInputBorder(),
+                ),
                 keyboardType: TextInputType.number,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
@@ -162,9 +232,33 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
                   return null;
                 },
               ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _semesterController,
+                decoration: const InputDecoration(
+                  labelText: 'Semester',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter semester';
+                  }
+                  if (int.tryParse(value) == null ||
+                      int.parse(value) < 1 ||
+                      int.parse(value) > 8) {
+                    return 'Please enter a valid semester (1-8)';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
               DropdownButtonFormField<String>(
                 value: selectedCourseType,
-                decoration: const InputDecoration(labelText: 'Course Type'),
+                decoration: const InputDecoration(
+                  labelText: 'Course Type',
+                  border: OutlineInputBorder(),
+                ),
                 items: courseTypes
                     .map((type) => DropdownMenuItem(
                           value: type,
@@ -214,11 +308,13 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
     _courseNameController.clear();
     _deptIdController.clear();
     _creditController.clear();
+    _semesterController.clear();
     selectedCourseType = null;
   }
 
   Future<void> _addCourse() async {
     if (!_formKey.currentState!.validate()) return;
+    if (selectedCourseType == null) return;
 
     setState(() => isLoading = true);
     try {
@@ -228,6 +324,7 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
         'dept_id': _deptIdController.text,
         'credit': int.parse(_creditController.text),
         'course_type': selectedCourseType,
+        'semester': int.parse(_semesterController.text),
       });
 
       if (mounted) {
@@ -256,6 +353,7 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
 
   Future<void> _updateCourse(String courseCode) async {
     if (!_formKey.currentState!.validate()) return;
+    if (selectedCourseType == null) return;
 
     setState(() => isLoading = true);
     try {
@@ -264,6 +362,7 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
         'dept_id': _deptIdController.text,
         'credit': int.parse(_creditController.text),
         'course_type': selectedCourseType,
+        'semester': int.parse(_semesterController.text),
       }).eq('course_code', courseCode);
 
       if (mounted) {
@@ -320,6 +419,10 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final crossAxisCount =
+        (screenWidth / 280).floor(); // Reduced from 320 to 280 for more columns
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Course Management'),
@@ -354,7 +457,9 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: selectedDepartment,
+                            value: departments.contains(selectedDepartment)
+                                ? selectedDepartment
+                                : null,
                             decoration: const InputDecoration(
                               labelText: 'Department',
                               border: OutlineInputBorder(),
@@ -403,11 +508,40 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
                             },
                           ),
                         ),
-                        const SizedBox(width: 16),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: selectedSemester,
+                      decoration: const InputDecoration(
+                        labelText: 'Semester',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                          value: null,
+                          child: Text('All Semesters'),
+                        ),
+                        ...semesters.map((sem) => DropdownMenuItem(
+                              value: sem,
+                              child: Text('Semester $sem'),
+                            )),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          selectedSemester = value;
+                          _applyFilters();
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
                         TextButton.icon(
                           onPressed: _resetFilters,
-                          icon: const Icon(Icons.clear),
-                          label: const Text('Clear'),
+                          icon: const Icon(Icons.clear_all),
+                          label: const Text('Reset Filters'),
                         ),
                       ],
                     ),
@@ -416,99 +550,261 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
               ),
             ),
           ),
-          // Courses list
+          // Course count
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Text(
+              'Showing ${filteredCourses.length} courses',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          // Courses grid
           Expanded(
             child: isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : filteredCourses.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No courses found',
-                          style: TextStyle(fontSize: 18),
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.book_outlined,
+                                size: 64, color: Colors.grey[400]),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No courses found',
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
                         ),
                       )
-                    : ListView.builder(
-                        itemCount: filteredCourses.length,
+                    : GridView.builder(
                         padding: const EdgeInsets.all(16),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: crossAxisCount,
+                          childAspectRatio: 1.5,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                        ),
+                        itemCount: filteredCourses.length,
                         itemBuilder: (context, index) {
                           final course = filteredCourses[index];
                           final courseType = course['course_type'] ?? 'major';
+                          final typeColor = _getCourseTypeColor(courseType);
 
                           return Card(
-                            child: ListTile(
-                              title: Text(course['course_code']),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(course['course_name']),
-                                  Text('Department: ${course['dept_id']}'),
-                                  Text('Credits: ${course['credit']}'),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: _getCourseTypeColor(courseType)
-                                          .withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: _getCourseTypeColor(courseType),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      courseType.toUpperCase(),
-                                      style: TextStyle(
-                                        color: _getCourseTypeColor(courseType),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                            elevation: 2,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(
+                                color: typeColor.withOpacity(0.3),
+                                width: 1,
                               ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.edit),
-                                    color: Colors.blue,
-                                    onPressed: () =>
-                                        _showAddEditCourseDialog(course),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete_outline),
-                                    color: Colors.red,
-                                    onPressed: () => showDialog(
-                                      context: context,
-                                      builder: (context) => AlertDialog(
-                                        title: const Text('Delete Course'),
-                                        content: Text(
-                                            'Are you sure you want to delete ${course['course_code']}?'),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.pop(context),
-                                            child: const Text('Cancel'),
+                            ),
+                            child: InkWell(
+                              onTap: () => _showAddEditCourseDialog(course),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                course['course_code'],
+                                                style: const TextStyle(
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                course['course_name'],
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  color: Colors.grey[600],
+                                                ),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ],
                                           ),
-                                          FilledButton(
-                                            onPressed: () {
-                                              Navigator.pop(context);
-                                              _deleteCourse(
-                                                  course['course_code']);
-                                            },
-                                            style: FilledButton.styleFrom(
-                                              backgroundColor: Colors.red,
+                                        ),
+                                        PopupMenuButton(
+                                          icon: const Icon(Icons.more_vert),
+                                          itemBuilder: (context) => [
+                                            PopupMenuItem(
+                                              child: ListTile(
+                                                leading: const Icon(Icons.edit,
+                                                    color: Colors.blue),
+                                                title: const Text('Edit'),
+                                                contentPadding: EdgeInsets.zero,
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                onTap: () {
+                                                  Navigator.pop(context);
+                                                  _showAddEditCourseDialog(
+                                                      course);
+                                                },
+                                              ),
                                             ),
-                                            child: const Text('Delete'),
-                                          ),
-                                        ],
-                                      ),
+                                            PopupMenuItem(
+                                              child: ListTile(
+                                                leading: const Icon(
+                                                    Icons.delete,
+                                                    color: Colors.red),
+                                                title: const Text('Delete'),
+                                                contentPadding: EdgeInsets.zero,
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                onTap: () {
+                                                  Navigator.pop(context);
+                                                  showDialog(
+                                                    context: context,
+                                                    builder: (context) =>
+                                                        AlertDialog(
+                                                      title: const Text(
+                                                          'Delete Course'),
+                                                      content: Text(
+                                                          'Are you sure you want to delete ${course['course_code']}?'),
+                                                      actions: [
+                                                        TextButton(
+                                                          onPressed: () =>
+                                                              Navigator.pop(
+                                                                  context),
+                                                          child: const Text(
+                                                              'Cancel'),
+                                                        ),
+                                                        FilledButton(
+                                                          onPressed: () {
+                                                            Navigator.pop(
+                                                                context);
+                                                            _deleteCourse(course[
+                                                                'course_code']);
+                                                          },
+                                                          style: FilledButton
+                                                              .styleFrom(
+                                                            backgroundColor:
+                                                                Colors.red,
+                                                          ),
+                                                          child: const Text(
+                                                              'Delete'),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
                                     ),
-                                  ),
-                                ],
+                                    const Spacer(),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey.shade100,
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                            border: Border.all(
+                                              color: Colors.grey.shade400,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'Sem ${course['semester'] ?? "N/A"}',
+                                            style: TextStyle(
+                                              color: Colors.grey[800],
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: typeColor.withOpacity(0.1),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                            border: Border.all(
+                                              color: typeColor,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            courseType.toUpperCase(),
+                                            style: TextStyle(
+                                              color: typeColor,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const Spacer(),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: typeColor.withOpacity(0.1),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                            border: Border.all(
+                                              color: typeColor,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            course['dept_id'],
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        Row(
+                                          children: [
+                                            const Icon(Icons.star, size: 16),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              '${course['credit']} credits',
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
-                              isThreeLine: true,
                             ),
                           );
                         },

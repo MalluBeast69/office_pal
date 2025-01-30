@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:loading_animation_widget/loading_animation_widget.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:office_pal/features/faculty/presentation/pages/faculty_dashboard_page.dart';
+import 'package:office_pal/features/student/presentation/pages/student_dashboard_page.dart';
 import 'package:office_pal/features/auth/presentation/pages/admin_login_page.dart';
 
 enum LoginMode { student, faculty }
@@ -97,7 +98,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             );
           }
         } else {
-          // TODO: Navigate to student dashboard when implemented
+          if (mounted) {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (context) => StudentDashboardPage(
+                  studentRegNo: id.toUpperCase(),
+                  studentName: data['student_name'],
+                  departmentId: data['dept_id'],
+                  semester: data['semester'],
+                ),
+              ),
+            );
+          }
         }
       }
     } on PostgrestException catch (error) {

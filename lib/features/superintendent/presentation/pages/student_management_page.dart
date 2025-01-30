@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:developer' as developer;
+import 'student_exam_registration_page.dart';
 
 class StudentManagementPage extends ConsumerStatefulWidget {
   const StudentManagementPage({super.key});
@@ -647,18 +648,38 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Student Management'),
+        centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.upload_file),
-            tooltip: 'Import Data',
-            onPressed: _showImportOptions,
+            icon: const Icon(Icons.app_registration),
+            tooltip: 'Register for Exam',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const StudentExamRegistrationPage(),
+                ),
+              ).then((_) => loadStudents());
+            },
           ),
           IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: 'Add Student',
-            onPressed: () => _addEditStudent(),
+            icon: const Icon(Icons.file_upload),
+            tooltip: 'Import Students',
+            onPressed: _showImportOptions,
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          final result = await showDialog<bool>(
+            context: context,
+            builder: (context) => const AddStudentDialog(),
+          );
+          if (result == true) {
+            loadStudents();
+          }
+        },
+        child: const Icon(Icons.person_add),
       ),
       body: Column(
         children: [
@@ -1459,6 +1480,259 @@ class RegistrationPreviewDialog extends StatelessWidget {
         FilledButton(
           onPressed: () => Navigator.pop(context, true),
           child: const Text('Import'),
+        ),
+      ],
+    );
+  }
+}
+
+class AddStudentDialog extends StatefulWidget {
+  const AddStudentDialog({super.key});
+
+  @override
+  State<AddStudentDialog> createState() => _AddStudentDialogState();
+}
+
+class _AddStudentDialogState extends State<AddStudentDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _semesterController = TextEditingController();
+  bool _isLoading = false;
+  String? _selectedDepartment;
+  String? _generatedRegNo;
+  List<String> _departments = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDepartments();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _semesterController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadDepartments() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('departments')
+          .select('dept_id')
+          .order('dept_id');
+
+      if (mounted) {
+        setState(() {
+          _departments = List<String>.from(
+              response.map((dept) => dept['dept_id'].toString()));
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading departments: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<String> _generateRegNo(String deptId) async {
+    try {
+      // Get the latest registration number for the department
+      final response = await Supabase.instance.client
+          .from('student')
+          .select('student_reg_no')
+          .ilike('student_reg_no', 'THAWS${deptId.substring(2)}%')
+          .order('student_reg_no', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (response != null) {
+        // Extract the number part and increment
+        final lastRegNo = response['student_reg_no'] as String;
+        final lastNumber = int.parse(lastRegNo.substring(7));
+        final newNumber = lastNumber + 1;
+        return 'THAWS${deptId.substring(2)}${newNumber.toString().padLeft(3, '0')}';
+      } else {
+        // If no existing students in department, start with 001
+        return 'THAWS${deptId.substring(2)}001';
+      }
+    } catch (error) {
+      throw Exception('Error generating registration number: $error');
+    }
+  }
+
+  Future<void> _addStudent() async {
+    if (!_formKey.currentState!.validate() || _generatedRegNo == null) return;
+
+    setState(() => _isLoading = true);
+    try {
+      // Double check if reg no is still available
+      final existingStudent = await Supabase.instance.client
+          .from('student')
+          .select()
+          .eq('student_reg_no', _generatedRegNo)
+          .maybeSingle();
+
+      if (existingStudent != null) {
+        throw Exception(
+            'Registration number is no longer available. Please try again.');
+      }
+
+      // Add new student
+      await Supabase.instance.client.from('student').insert({
+        'student_reg_no': _generatedRegNo,
+        'student_name': _nameController.text.trim(),
+        'dept_id': _selectedDepartment,
+        'semester': int.parse(_semesterController.text.trim()),
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error adding student: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add New Student'),
+      content: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Department Selection
+              DropdownButtonFormField<String>(
+                value: _selectedDepartment,
+                decoration: const InputDecoration(
+                  labelText: 'Department',
+                  hintText: 'Select department',
+                ),
+                items: _departments.map((dept) {
+                  return DropdownMenuItem(
+                    value: dept,
+                    child: Text(dept),
+                  );
+                }).toList(),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please select a department';
+                  }
+                  return null;
+                },
+                onChanged: (value) async {
+                  if (value != null) {
+                    setState(() {
+                      _selectedDepartment = value;
+                      _generatedRegNo = null;
+                      _isLoading = true;
+                    });
+                    try {
+                      final regNo = await _generateRegNo(value);
+                      if (mounted) {
+                        setState(() {
+                          _generatedRegNo = regNo;
+                          _isLoading = false;
+                        });
+                      }
+                    } catch (error) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error: $error'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        setState(() => _isLoading = false);
+                      }
+                    }
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+              // Registration Number Display
+              TextFormField(
+                initialValue: _generatedRegNo,
+                enabled: false,
+                decoration: const InputDecoration(
+                  labelText: 'Registration Number',
+                  hintText: 'Auto-generated after department selection',
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Student Name',
+                  hintText: 'Enter full name',
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter student name';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _semesterController,
+                decoration: const InputDecoration(
+                  labelText: 'Semester',
+                  hintText: 'Enter semester (1-8)',
+                ),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter semester';
+                  }
+                  final semester = int.tryParse(value);
+                  if (semester == null || semester < 1 || semester > 8) {
+                    return 'Semester must be between 1 and 8';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _isLoading || _generatedRegNo == null ? null : _addStudent,
+          child: _isLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                  ),
+                )
+              : const Text('Add Student'),
         ),
       ],
     );

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:loading_animation_widget/loading_animation_widget.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:office_pal/features/superintendent/presentation/pages/superintendent_dashboard_page.dart';
+import 'package:office_pal/features/controller/presentation/pages/controller_dashboard_page.dart';
 
 enum AdminLoginMode { superintendent, controller }
 
@@ -48,7 +50,17 @@ class _AdminLoginPageState extends ConsumerState<AdminLoginPage> {
             backgroundColor: Colors.green,
           ),
         );
-        Navigator.of(context).pop(); // Return to main flow for redirection
+
+        // Navigate to the appropriate dashboard based on login mode
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => _loginMode == AdminLoginMode.superintendent
+                  ? const SuperintendentDashboardPage()
+                  : const ControllerDashboardPage(),
+            ),
+          );
+        }
       }
     } on AuthException catch (error) {
       if (mounted) {

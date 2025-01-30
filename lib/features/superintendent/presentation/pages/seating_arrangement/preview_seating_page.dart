@@ -274,7 +274,9 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
             backgroundColor: Colors.green,
           ),
         );
-        Navigator.of(context).popUntil((route) => route.isFirst);
+        // Navigate back to seating management page
+        Navigator.of(context).popUntil((route) =>
+            route.settings.name == '/seating_management' || route.isFirst);
       }
     } catch (error) {
       if (mounted) {

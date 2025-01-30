@@ -6,6 +6,7 @@ import 'dart:developer' as developer;
 import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'dart:math' as math;
+import 'dart:async';
 
 class StudentDashboardPage extends ConsumerStatefulWidget {
   final String studentRegNo;
@@ -231,6 +232,22 @@ class _StudentDashboardPageState extends ConsumerState<StudentDashboardPage> {
                         ),
                       ],
                     ),
+                    // Next Exam Countdown
+                    if (!isLoading) ...[
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: _getNextExam() != null
+                              ? ExamCountdown(exam: _getNextExam()!)
+                              : const Card(
+                                  child: Padding(
+                                    padding: EdgeInsets.all(16.0),
+                                    child: Text('No upcoming exams'),
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ],
                     // Student Info
                     SliverToBoxAdapter(
                       child: Padding(
@@ -781,6 +798,19 @@ class _StudentDashboardPageState extends ConsumerState<StudentDashboardPage> {
       ],
     );
   }
+
+  Map<String, dynamic>? _getNextExam() {
+    if (examSeatingArrangements.isEmpty) return null;
+
+    final now = DateTime.now();
+    return examSeatingArrangements
+        .where((arr) => DateTime.parse(arr['exam']['exam_date']).isAfter(now))
+        .reduce((a, b) {
+      final dateA = DateTime.parse(a['exam']['exam_date']);
+      final dateB = DateTime.parse(b['exam']['exam_date']);
+      return dateA.isBefore(dateB) ? a : b;
+    })['exam'];
+  }
 }
 
 class InfoRow extends StatelessWidget {
@@ -1220,5 +1250,189 @@ class DetailRow extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+class ExamCountdown extends StatefulWidget {
+  final Map<String, dynamic> exam;
+
+  const ExamCountdown({
+    Key? key,
+    required this.exam,
+  }) : super(key: key);
+
+  @override
+  State<ExamCountdown> createState() => _ExamCountdownState();
+}
+
+class _ExamCountdownState extends State<ExamCountdown> {
+  late Timer _timer;
+  late Duration _timeLeft;
+  String _tip = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _updateTimeLeft();
+    _timer =
+        Timer.periodic(const Duration(seconds: 1), (_) => _updateTimeLeft());
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
+
+  void _updateTimeLeft() {
+    final examDate = DateTime.parse(widget.exam['exam_date']);
+    final now = DateTime.now();
+    setState(() {
+      _timeLeft = examDate.difference(now);
+      _updateTip();
+    });
+  }
+
+  void _updateTip() {
+    final daysLeft = _timeLeft.inDays;
+    if (daysLeft > 7) {
+      _tip =
+          'Start preparing early for ${widget.exam['course_id']}. Create a study schedule.';
+    } else if (daysLeft > 3) {
+      _tip =
+          'Review your notes and practice problems for ${widget.exam['course_id']}.';
+    } else if (daysLeft > 1) {
+      _tip =
+          'Get enough rest and do final revisions for ${widget.exam['course_id']}.';
+    } else if (daysLeft > 0) {
+      _tip = 'Prepare your hall ticket and materials for tomorrow\'s exam.';
+    } else if (_timeLeft.inHours > 1) {
+      _tip = 'Get ready! Arrive at the exam hall at least 30 minutes early.';
+    } else {
+      _tip = 'Your exam is about to start. Good luck!';
+    }
+  }
+
+  Color _getColor() {
+    final daysLeft = _timeLeft.inDays;
+    if (daysLeft > 7) {
+      return Colors.blue;
+    } else if (daysLeft > 3) {
+      return Colors.green;
+    } else if (daysLeft > 1) {
+      return Colors.orange;
+    } else {
+      return Colors.red;
+    }
+  }
+
+  String _formatDuration() {
+    if (_timeLeft.inDays > 0) {
+      return '${_timeLeft.inDays} days';
+    } else if (_timeLeft.inHours > 0) {
+      return '${_timeLeft.inHours} hours';
+    } else if (_timeLeft.inMinutes > 0) {
+      return '${_timeLeft.inMinutes} minutes';
+    } else {
+      return '${_timeLeft.inSeconds} seconds';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _getColor();
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: color.withOpacity(0.5), width: 2),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.timer, color: color),
+                const SizedBox(width: 8),
+                Text(
+                  'Next Exam Countdown',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: color,
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              widget.exam['course_id'],
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Date: ${DateFormat('EEEE, MMMM d').format(DateTime.parse(widget.exam['exam_date']))}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            Text(
+              'Time: ${widget.exam['time']} (${widget.exam['session'] == 'FN' ? 'Morning' : 'Afternoon'})',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    _formatDuration(),
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          color: color,
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                  Text(
+                    ' remaining',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: color,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.lightbulb_outline, color: color, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _tip,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Colors.grey.shade700,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ).animate().fadeIn().slideY(begin: 0.3);
   }
 }

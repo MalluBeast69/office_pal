@@ -151,6 +151,8 @@ class _SuperintendentDashboardPageState
           context,
           MaterialPageRoute(
             builder: (context) => const SeatingManagementPage(),
+            settings:
+                const RouteSettings(name: SeatingManagementPage.routeName),
           ),
         ).then((_) => _loadData());
         break;
@@ -294,10 +296,23 @@ class _SuperintendentDashboardPageState
     return result ?? false;
   }
 
-  void _signOut() async {
-    await Supabase.instance.client.auth.signOut();
-    if (mounted) {
-      Navigator.of(context).pushReplacementNamed('/login');
+  Future<void> _signOut(BuildContext context) async {
+    try {
+      await Supabase.instance.client.auth.signOut();
+      if (context.mounted) {
+        // Navigate to login page and remove all previous routes
+        Navigator.of(context)
+            .pushNamedAndRemoveUntil('/login', (route) => false);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error signing out'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -376,7 +391,7 @@ class _SuperintendentDashboardPageState
           ),
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: _signOut,
+            onPressed: () => _signOut(context),
           ),
         ],
       ),

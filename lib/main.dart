@@ -15,9 +15,6 @@ void main() async {
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZueGlybHBpcWNpZXppZm9uZ3hiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzYzNjIxMzgsImV4cCI6MjA1MTkzODEzOH0.qbqwZJr9ufNbs3mjQHFuJMNlef-mUwBNoCaoeuHDGhM',
   );
 
-  // Sign out on app start to prevent auto-login
-  await Supabase.instance.client.auth.signOut();
-
   runApp(const ProviderScope(child: MyApp()));
 }
 
@@ -54,31 +51,52 @@ class _MyAppState extends ConsumerState<MyApp> {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      home: _isLoading
-          ? const LoadingScreen()
-          : StreamBuilder<AuthState>(
-              stream: Supabase.instance.client.auth.onAuthStateChange,
-              builder: (context, snapshot) {
-                if (!snapshot.hasData || snapshot.data?.session == null) {
-                  return const LoginPage();
-                }
+      // Define named routes
+      routes: {
+        '/': (context) =>
+            _isLoading ? const LoadingScreen() : const AuthWrapper(),
+        '/login': (context) => const LoginPage(),
+        '/superintendent': (context) => const SuperintendentDashboardPage(),
+        '/controller': (context) => const ControllerDashboardPage(),
+      },
+    );
+  }
+}
 
-                final userEmail =
-                    snapshot.data?.session?.user.email?.toLowerCase();
+class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({super.key});
 
-                if (userEmail == null) {
-                  return const LoginPage();
-                }
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<AuthState>(
+      stream: Supabase.instance.client.auth.onAuthStateChange,
+      builder: (context, snapshot) {
+        // Debug print to track auth state
+        print('Auth state changed: ${snapshot.data?.session?.user.email}');
 
-                if (userEmail.contains('superintendent')) {
-                  return const SuperintendentDashboardPage();
-                } else if (userEmail.contains('controller')) {
-                  return const ControllerDashboardPage();
-                }
+        if (!snapshot.hasData || snapshot.data?.session == null) {
+          return const LoginPage();
+        }
 
-                return const LoginPage();
-              },
-            ),
+        final userEmail =
+            snapshot.data?.session?.user.email?.toLowerCase() ?? '';
+        print('User email: $userEmail');
+
+        // More specific email checks
+        if (userEmail.isEmpty) {
+          return const LoginPage();
+        }
+
+        if (userEmail.contains('superintendent')) {
+          return const SuperintendentDashboardPage();
+        } else if (userEmail.toLowerCase().contains('controller')) {
+          print('Navigating to Controller Dashboard');
+          return const ControllerDashboardPage();
+        }
+
+        print('No role match found, returning to login');
+        return const LoginPage();
+      },
     );
   }
 }

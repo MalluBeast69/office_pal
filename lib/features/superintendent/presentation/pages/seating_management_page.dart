@@ -10,6 +10,8 @@ import 'dart:developer' as developer;
 class SeatingManagementPage extends ConsumerStatefulWidget {
   const SeatingManagementPage({Key? key}) : super(key: key);
 
+  static const String routeName = '/seating_management';
+
   @override
   ConsumerState<SeatingManagementPage> createState() =>
       _SeatingManagementPageState();

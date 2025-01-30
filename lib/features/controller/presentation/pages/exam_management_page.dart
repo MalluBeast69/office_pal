@@ -347,6 +347,18 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
         title: const Text('Exam Management'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.chair),
+            tooltip: 'Generate Seating',
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Seating arrangement feature coming soon'),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.upload_file),
             tooltip: 'Import Excel',
             onPressed: () => _importFromExcel(context),

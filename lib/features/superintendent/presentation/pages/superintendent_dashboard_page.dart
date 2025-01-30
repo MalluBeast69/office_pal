@@ -99,7 +99,7 @@ class _SuperintendentDashboardPageState
           MaterialPageRoute(
             builder: (context) => const StudentManagementPage(),
           ),
-        ).then((_) => _loadData()); // Reload data when returning
+        ).then((_) => _loadData());
         break;
       case 'courses':
         Navigator.push(
@@ -107,7 +107,7 @@ class _SuperintendentDashboardPageState
           MaterialPageRoute(
             builder: (context) => const CourseManagementPage(),
           ),
-        ).then((_) => _loadData()); // Reload data when returning
+        ).then((_) => _loadData());
         break;
       case 'departments':
         Navigator.push(
@@ -115,7 +115,7 @@ class _SuperintendentDashboardPageState
           MaterialPageRoute(
             builder: (context) => const DepartmentManagementPage(),
           ),
-        ).then((_) => _loadData()); // Reload data when returning
+        ).then((_) => _loadData());
         break;
       case 'faculty':
         Navigator.push(
@@ -123,7 +123,7 @@ class _SuperintendentDashboardPageState
           MaterialPageRoute(
             builder: (context) => const FacultyManagementPage(),
           ),
-        ).then((_) => _loadData()); // Reload data when returning
+        ).then((_) => _loadData());
         break;
       case 'halls':
         Navigator.push(
@@ -131,7 +131,7 @@ class _SuperintendentDashboardPageState
           MaterialPageRoute(
             builder: (context) => const HallManagementPage(),
           ),
-        ).then((_) => _loadData()); // Reload data when returning
+        ).then((_) => _loadData());
         break;
       case 'exams':
         Navigator.push(
@@ -139,7 +139,15 @@ class _SuperintendentDashboardPageState
           MaterialPageRoute(
             builder: (context) => const ExamManagementPage(),
           ),
-        ).then((_) => _loadData()); // Reload data when returning
+        ).then((_) => _loadData());
+        break;
+      case 'seating':
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Seating arrangement feature coming soon'),
+            backgroundColor: Colors.orange,
+          ),
+        );
         break;
     }
   }
@@ -473,6 +481,14 @@ class _SuperintendentDashboardPageState
                             color: Colors.pink,
                             onTap: () => _navigateToManagement('exams'),
                           ),
+                          _ManagementCard(
+                            title: 'Seating Arrangement',
+                            description:
+                                'Generate and manage exam seating arrangements',
+                            icon: Icons.event_seat,
+                            color: Colors.amber,
+                            onTap: () => _navigateToManagement('seating'),
+                          ),
                         ]
                             .map((card) => Padding(
                                   padding: const EdgeInsets.only(bottom: 8.0),
@@ -534,6 +550,14 @@ class _SuperintendentDashboardPageState
                             icon: Icons.assignment,
                             color: Colors.pink,
                             onTap: () => _navigateToManagement('exams'),
+                          ),
+                          _ManagementCard(
+                            title: 'Seating Arrangement',
+                            description:
+                                'Generate and manage exam seating arrangements',
+                            icon: Icons.event_seat,
+                            color: Colors.amber,
+                            onTap: () => _navigateToManagement('seating'),
                           ),
                         ],
                       ),

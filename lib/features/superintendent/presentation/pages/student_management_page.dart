@@ -904,15 +904,33 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
             child: isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : filteredStudents.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No students found',
-                          style: TextStyle(fontSize: 16),
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.people_outline,
+                                size: 64, color: Colors.grey[400]),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No students found',
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
                         ),
                       )
-                    : ListView.builder(
+                    : GridView.builder(
+                        padding: const EdgeInsets.all(16),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount:
+                              (MediaQuery.of(context).size.width / 280).floor(),
+                          childAspectRatio: 1.5,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                        ),
                         itemCount: filteredStudents.length,
-                        padding: const EdgeInsets.all(8),
                         itemBuilder: (context, index) {
                           final student = filteredStudents[index];
                           final courses =
@@ -921,149 +939,200 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
                               courses.any((c) => c['is_reguler'] == false);
 
                           return Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              student['student_name'],
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 16,
+                            elevation: 2,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(
+                                color: Colors.blue.withOpacity(0.3),
+                                width: 1,
+                              ),
+                            ),
+                            child: InkWell(
+                              onTap: () => _viewStudentCourses(
+                                  student['student_reg_no']),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                student['student_name'],
+                                                style: const TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                student['student_reg_no'],
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  color: Colors.grey[600],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuButton(
+                                          icon: const Icon(Icons.more_vert),
+                                          itemBuilder: (context) => [
+                                            PopupMenuItem(
+                                              child: ListTile(
+                                                leading:
+                                                    const Icon(Icons.menu_book),
+                                                title:
+                                                    const Text('View Courses'),
+                                                contentPadding: EdgeInsets.zero,
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                onTap: () {
+                                                  Navigator.pop(context);
+                                                  _viewStudentCourses(student[
+                                                      'student_reg_no']);
+                                                },
                                               ),
                                             ),
-                                            const SizedBox(height: 4),
-                                            if (courses.isNotEmpty)
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                  horizontal: 8,
-                                                  vertical: 4,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: hasBacklogs
-                                                      ? Colors.orange
-                                                          .withOpacity(0.1)
-                                                      : Colors.green
-                                                          .withOpacity(0.1),
-                                                  borderRadius:
-                                                      BorderRadius.circular(12),
-                                                  border: Border.all(
-                                                    color: hasBacklogs
-                                                        ? Colors.orange
-                                                        : Colors.green,
-                                                  ),
-                                                ),
-                                                child: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    Icon(
-                                                      hasBacklogs
-                                                          ? Icons.warning
-                                                          : Icons.check_circle,
-                                                      size: 14,
-                                                      color: hasBacklogs
-                                                          ? Colors.orange
-                                                          : Colors.green,
-                                                    ),
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      hasBacklogs
-                                                          ? '${courses.where((c) => c['is_reguler'] == false).length} Backlogs'
-                                                          : 'Regular',
-                                                      style: TextStyle(
-                                                        color: hasBacklogs
-                                                            ? Colors.orange
-                                                            : Colors.green,
-                                                        fontSize: 12,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
+                                            PopupMenuItem(
+                                              child: ListTile(
+                                                leading: const Icon(Icons.edit,
+                                                    color: Colors.blue),
+                                                title: const Text('Edit'),
+                                                contentPadding: EdgeInsets.zero,
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                onTap: () {
+                                                  Navigator.pop(context);
+                                                  _addEditStudent(
+                                                      student: student);
+                                                },
                                               ),
+                                            ),
+                                            PopupMenuItem(
+                                              child: ListTile(
+                                                leading: const Icon(
+                                                    Icons.delete,
+                                                    color: Colors.red),
+                                                title: const Text('Delete'),
+                                                contentPadding: EdgeInsets.zero,
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                onTap: () {
+                                                  Navigator.pop(context);
+                                                  _deleteStudent(student[
+                                                      'student_reg_no']);
+                                                },
+                                              ),
+                                            ),
                                           ],
                                         ),
-                                      ),
+                                      ],
+                                    ),
+                                    const Spacer(),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blue.withOpacity(0.1),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                            border: Border.all(
+                                              color: Colors.blue,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            student['dept_id'],
+                                            style: const TextStyle(
+                                              color: Colors.blue,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey.shade100,
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                            border: Border.all(
+                                              color: Colors.grey.shade400,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'Sem ${student['semester']}',
+                                            style: TextStyle(
+                                              color: Colors.grey[800],
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const Spacer(),
+                                    if (courses.isNotEmpty)
                                       Row(
-                                        mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          IconButton(
-                                            icon: const Icon(Icons.menu_book),
-                                            tooltip: 'View Courses',
-                                            onPressed: () =>
-                                                _viewStudentCourses(
-                                                    student['student_reg_no']),
-                                            padding: EdgeInsets.zero,
-                                            constraints: const BoxConstraints(
-                                              minWidth: 32,
-                                              minHeight: 32,
+                                          Icon(Icons.book,
+                                              size: 16,
+                                              color: Colors.grey[600]),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '${courses.length} Courses',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: Colors.grey[600],
                                             ),
-                                            iconSize: 18,
                                           ),
-                                          IconButton(
-                                            icon: const Icon(Icons.edit),
-                                            tooltip: 'Edit Student',
-                                            onPressed: () => _addEditStudent(
-                                                student: student),
-                                            padding: EdgeInsets.zero,
-                                            constraints: const BoxConstraints(
-                                              minWidth: 32,
-                                              minHeight: 32,
+                                          if (hasBacklogs) ...[
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 6,
+                                                vertical: 2,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.orange
+                                                    .withOpacity(0.1),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                border: Border.all(
+                                                  color: Colors.orange,
+                                                ),
+                                              ),
+                                              child: Text(
+                                                'Backlogs',
+                                                style: TextStyle(
+                                                  color: Colors.orange[800],
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
                                             ),
-                                            iconSize: 18,
-                                          ),
-                                          IconButton(
-                                            icon: const Icon(Icons.delete,
-                                                color: Colors.red),
-                                            tooltip: 'Delete Student',
-                                            onPressed: () => _deleteStudent(
-                                                student['student_reg_no']),
-                                            padding: EdgeInsets.zero,
-                                            constraints: const BoxConstraints(
-                                              minWidth: 32,
-                                              minHeight: 32,
-                                            ),
-                                            iconSize: 18,
-                                          ),
+                                          ],
                                         ],
                                       ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Reg No: ${student['student_reg_no']}',
-                                    style: const TextStyle(fontSize: 13),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Department: ${student['dept_id']}',
-                                    style: const TextStyle(fontSize: 13),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Semester: ${student['semester']}',
-                                    style: const TextStyle(fontSize: 13),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Total Courses: ${courses.length}${hasBacklogs ? ' (${courses.where((c) => c['is_reguler'] == true).length} Regular)' : ''}',
-                                    style: const TextStyle(fontSize: 13),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           );

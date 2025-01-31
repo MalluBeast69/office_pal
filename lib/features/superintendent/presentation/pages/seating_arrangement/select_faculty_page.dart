@@ -21,10 +21,10 @@ class SelectFacultyPage extends ConsumerStatefulWidget {
 
 class _SelectFacultyPageState extends ConsumerState<SelectFacultyPage> {
   List<Map<String, dynamic>> _faculty = [];
-  bool _isLoading = true;
+  Map<String, String> _hallFacultyMap = {};
+  bool _isLoading = false;
   String _searchQuery = '';
-  final Map<String, String> _hallFacultyMap = {};
-  int _requiredFaculty = 0;
+  late int _requiredFaculty;
 
   @override
   void initState() {
@@ -34,12 +34,17 @@ class _SelectFacultyPageState extends ConsumerState<SelectFacultyPage> {
   }
 
   Future<void> _loadFaculty() async {
+    setState(() => _isLoading = true);
     try {
-      setState(() => _isLoading = true);
-      final response = await Supabase.instance.client
-          .from('faculty')
-          .select()
-          .eq('is_available', true);
+      // Load faculty with their existing assignments
+      final response = await Supabase.instance.client.from('faculty').select('''
+            *,
+            seating_arr:seating_arr(
+              exam_id,
+              hall_id,
+              exam:exam(exam_date, session)
+            )
+          ''').eq('is_available', true);
 
       if (mounted) {
         setState(() {
@@ -60,6 +65,87 @@ class _SelectFacultyPageState extends ConsumerState<SelectFacultyPage> {
     }
   }
 
+  // Calculate faculty workload for a given date
+  int _getFacultyWorkload(Map<String, dynamic> faculty, DateTime date) {
+    final assignments = (faculty['seating_arr'] as List?) ?? [];
+    return assignments.where((assignment) {
+      final examDate = DateTime.parse(assignment['exam']['exam_date']);
+      return examDate.year == date.year &&
+          examDate.month == date.month &&
+          examDate.day == date.day;
+    }).length;
+  }
+
+  // Get faculty availability score (lower is better)
+  double _getFacultyScore(Map<String, dynamic> faculty, DateTime examDate) {
+    final workload = _getFacultyWorkload(faculty, examDate);
+    final assignments = (faculty['seating_arr'] as List?) ?? [];
+
+    // Calculate average workload over the past week
+    int weeklyWorkload = 0;
+    for (int i = 1; i <= 7; i++) {
+      final date = examDate.subtract(Duration(days: i));
+      weeklyWorkload += _getFacultyWorkload(faculty, date);
+    }
+
+    // Score based on current day workload and weekly average
+    return workload * 2.0 + (weeklyWorkload / 7.0);
+  }
+
+  void _autoAssignFaculty() {
+    final availableFaculty = _filterFaculty();
+    if (availableFaculty.isEmpty) return;
+
+    _hallFacultyMap.clear();
+
+    // Get unique exam dates from widget.exams
+    final examDates = widget.exams
+        .map((e) => DateTime.parse(e['exam_date']))
+        .toSet()
+        .toList();
+
+    // For each exam date
+    for (final date in examDates) {
+      // Get exams for this date
+      final dateExams = widget.exams
+          .where((e) => DateTime.parse(e['exam_date']).isAtSameMomentAs(date))
+          .toList();
+
+      // For each session in this date
+      final sessions = dateExams.map((e) => e['session']).toSet();
+      for (final session in sessions) {
+        // Get halls that need faculty for this session
+        final sessionHalls = widget.selectedHalls.where((hallId) {
+          return dateExams.any((exam) => exam['session'] == session);
+        }).toList();
+
+        // Sort faculty by their availability score for this date
+        final sortedFaculty = List<Map<String, dynamic>>.from(availableFaculty)
+          ..sort((a, b) {
+            final scoreA = _getFacultyScore(a, date);
+            final scoreB = _getFacultyScore(b, date);
+            return scoreA.compareTo(scoreB);
+          });
+
+        // Assign faculty to halls
+        for (final hallId in sessionHalls) {
+          // Find the best available faculty
+          final availableFacultyForHall = sortedFaculty.where((f) {
+            // Check if faculty is not already assigned to another hall in this session
+            return !_hallFacultyMap.values.contains(f['faculty_id']);
+          }).toList();
+
+          if (availableFacultyForHall.isNotEmpty) {
+            _hallFacultyMap[hallId] =
+                availableFacultyForHall.first['faculty_id'];
+          }
+        }
+      }
+    }
+
+    setState(() {});
+  }
+
   List<Map<String, dynamic>> _filterFaculty() {
     return _faculty.where((faculty) {
       // Search filter
@@ -72,23 +158,6 @@ class _SelectFacultyPageState extends ConsumerState<SelectFacultyPage> {
     }).toList();
   }
 
-  void _assignAvailableFaculty() {
-    final availableFaculty = _filterFaculty()
-      ..sort((a, b) => a['faculty_name'].toString().compareTo(b['faculty_name']
-          .toString())); // Sort by name for consistent assignment
-
-    _hallFacultyMap.clear();
-
-    // Assign faculty to halls
-    for (int i = 0; i < widget.selectedHalls.length; i++) {
-      if (i < availableFaculty.length) {
-        _hallFacultyMap[widget.selectedHalls[i]] =
-            availableFaculty[i]['faculty_id'];
-      }
-    }
-    setState(() {});
-  }
-
   @override
   Widget build(BuildContext context) {
     final filteredFaculty = _filterFaculty();
@@ -97,18 +166,10 @@ class _SelectFacultyPageState extends ConsumerState<SelectFacultyPage> {
       appBar: AppBar(
         title: const Text('Assign Faculty'),
         actions: [
-          TextButton.icon(
-            icon: Icon(
-              Icons.select_all,
-              color: Theme.of(context).colorScheme.onPrimary,
-            ),
-            label: Text(
-              'Assign Available',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onPrimary,
-              ),
-            ),
-            onPressed: _assignAvailableFaculty,
+          FilledButton.icon(
+            icon: const Icon(Icons.auto_awesome),
+            label: const Text('Auto Assign'),
+            onPressed: _autoAssignFaculty,
           ),
         ],
         bottom: PreferredSize(

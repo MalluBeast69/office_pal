@@ -61,26 +61,33 @@ class _SelectExamPageState extends ConsumerState<SelectExamPage> {
               final filteredExams = _filterExams(exams);
               final allSelected = filteredExams.every((exam) =>
                   _selectedExams.any((e) => e['exam_id'] == exam['exam_id']));
-              return TextButton.icon(
-                icon: Icon(
-                  allSelected ? Icons.deselect : Icons.select_all,
-                  color: Theme.of(context).colorScheme.onPrimary,
-                ),
-                label: Text(
-                  allSelected ? 'Deselect All' : 'Select All',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onPrimary,
+              return Padding(
+                padding: const EdgeInsets.only(right: 16.0),
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: allSelected
+                        ? Theme.of(context).colorScheme.error.withOpacity(0.9)
+                        : Theme.of(context).colorScheme.primaryContainer,
+                    foregroundColor: allSelected
+                        ? Theme.of(context).colorScheme.onError
+                        : Theme.of(context).colorScheme.onPrimaryContainer,
                   ),
+                  icon: Icon(
+                    allSelected ? Icons.deselect : Icons.select_all,
+                  ),
+                  label: Text(
+                    allSelected ? 'Deselect All' : 'Select All',
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      if (allSelected) {
+                        _selectedExams.clear();
+                      } else {
+                        _selectedExams = Set.from(filteredExams);
+                      }
+                    });
+                  },
                 ),
-                onPressed: () {
-                  setState(() {
-                    if (allSelected) {
-                      _selectedExams.clear();
-                    } else {
-                      _selectedExams = Set.from(filteredExams);
-                    }
-                  });
-                },
               );
             },
             loading: () => const SizedBox.shrink(),

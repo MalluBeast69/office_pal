@@ -6,6 +6,11 @@ import 'package:table_calendar/table_calendar.dart';
 import 'dart:math' as math;
 import 'seating_arrangement/select_exam_page.dart';
 import 'dart:developer' as developer;
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import 'package:url_launcher/url_launcher.dart';
 
 class SeatingManagementPage extends ConsumerStatefulWidget {
   const SeatingManagementPage({Key? key}) : super(key: key);
@@ -1273,10 +1278,33 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
       appBar: AppBar(
         title: const Text('Seating Management'),
         actions: [
+          if (!_isLoading)
+            IconButton(
+              icon: const Icon(Icons.picture_as_pdf),
+              tooltip: 'Download PDF',
+              onPressed: _generateAndDownloadPDF,
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
             tooltip: 'Refresh',
+            onPressed: _isLoading ? null : _loadData,
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete),
+            tooltip: 'Delete Arrangements',
+            onPressed: _showDeleteOptions,
+          ),
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: 'Create New Arrangement',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const SelectExamPage(),
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -1285,6 +1313,44 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
           : Column(
               children: [
                 _buildTopBar(),
+                if (_seatingArrangements.isEmpty)
+                  Container(
+                    margin: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceVariant,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          color: Theme.of(context).colorScheme.secondary,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            "Don't see any exams? Try refreshing the page or check if seating arrangements have been generated.",
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(
+                                  color:
+                                      Theme.of(context).colorScheme.secondary,
+                                ),
+                          ),
+                        ),
+                        TextButton.icon(
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Refresh'),
+                          onPressed: _loadData,
+                        ),
+                      ],
+                    ),
+                  ),
                 Expanded(
                   child: Row(
                     children: [
@@ -1429,6 +1495,471 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
         _filterEndDate = result['end'];
       });
     }
+  }
+
+  Future<void> _deleteSeatingArrangementsByDate(DateTime date) async {
+    try {
+      setState(() => _isLoading = true);
+
+      // Format date to match the database format
+      final formattedDate = DateFormat('yyyy-MM-dd').format(date);
+
+      // Get exam IDs for the selected date
+      final examIds = _seatingArrangements[formattedDate]
+              ?.values
+              .expand((e) => e)
+              .map((e) => e['exam_id'])
+              .where((id) => id != null) // Filter out null IDs
+              .toList() ??
+          [];
+
+      if (examIds.isEmpty) {
+        throw Exception('No seating arrangements found for selected date');
+      }
+
+      // Delete arrangements for these exam IDs
+      await Supabase.instance.client
+          .from('seating_arr')
+          .delete()
+          .in_('exam_id', examIds);
+
+      await _loadData();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Seating arrangements deleted successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (error) {
+      developer.log('Error deleting seating arrangements: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error deleting seating arrangements: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _deleteAllSeatingArrangements() async {
+    try {
+      setState(() => _isLoading = true);
+
+      // Delete all records with a valid WHERE clause
+      await Supabase.instance.client.from('seating_arr').delete().gte(
+          'created_at',
+          DateTime(2020)
+              .toIso8601String()); // This will match all records since 2020
+
+      await _loadData();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('All seating arrangements deleted successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (error) {
+      developer.log('Error deleting all seating arrangements: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error deleting all seating arrangements: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _showDeleteOptions() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Seating Arrangements'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.calendar_today, color: Colors.blue),
+              title: const Text('Delete by Date'),
+              subtitle:
+                  const Text('Delete all arrangements for a specific date'),
+              onTap: () {
+                Navigator.pop(context);
+                _showDatePicker();
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.domain, color: Colors.green),
+              title: const Text('Delete by Hall'),
+              subtitle:
+                  const Text('Delete all arrangements for a specific hall'),
+              onTap: () {
+                Navigator.pop(context);
+                _showHallSelectionDialog();
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.delete_forever, color: Colors.red),
+              title: const Text('Delete All'),
+              subtitle: const Text('Delete all seating arrangements'),
+              onTap: () {
+                Navigator.pop(context);
+                _showDeleteAllConfirmation();
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDatePicker() async {
+    final DateTime? pickedDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+    );
+
+    if (pickedDate != null && mounted) {
+      _showDeleteDateConfirmation(pickedDate);
+    }
+  }
+
+  void _showDeleteDateConfirmation(DateTime date) {
+    final formattedDate = DateFormat('MMMM d, yyyy').format(date);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Delete'),
+        content: Text(
+            'Are you sure you want to delete all seating arrangements for $formattedDate?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteSeatingArrangementsByDate(date);
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteAllConfirmation() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Delete All'),
+        content: const Text(
+            'Are you sure you want to delete ALL seating arrangements? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteAllSeatingArrangements();
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete All'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _generateAndDownloadPDF() async {
+    try {
+      setState(() => _isLoading = true);
+
+      // Create PDF document
+      final pdf = pw.Document();
+
+      // For each date and session
+      for (final hallId in _seatingArrangements.keys) {
+        for (final date in _seatingArrangements[hallId]!.keys) {
+          final arrangements = _seatingArrangements[hallId]![date]!;
+
+          // Group arrangements by session
+          final sessionArrangements = <String, List<Map<String, dynamic>>>{};
+          for (final arr in arrangements) {
+            final session = arr['exam']['session'] as String;
+            sessionArrangements[session] ??= [];
+            sessionArrangements[session]!.add(arr);
+          }
+
+          // For each session
+          for (final session in sessionArrangements.keys) {
+            final currentArrangements = sessionArrangements[session]!;
+            if (currentArrangements.isEmpty) continue;
+
+            // Add page for this session
+            pdf.addPage(
+              pw.MultiPage(
+                pageFormat: PdfPageFormat.a4,
+                build: (context) {
+                  final pages = <pw.Widget>[];
+
+                  // Header
+                  pages.add(
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(10),
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border.all(),
+                        borderRadius:
+                            const pw.BorderRadius.all(pw.Radius.circular(5)),
+                      ),
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'Examination Seating Arrangement',
+                            style: pw.TextStyle(
+                              fontSize: 16,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                          pw.SizedBox(height: 8),
+                          pw.Text(
+                            'Date: ${DateFormat('MMMM d, y').format(DateTime.parse(date))}',
+                          ),
+                          pw.Text('Session: $session'),
+                          pw.Text('Hall: $hallId'),
+                        ],
+                      ),
+                    ),
+                  );
+
+                  pages.add(pw.SizedBox(height: 20));
+
+                  // Get hall details
+                  final hall = _halls.firstWhere((h) => h['hall_id'] == hallId);
+                  final rows = hall['no_of_rows'] as int;
+                  final cols = hall['no_of_columns'] as int;
+
+                  // Create seating grid
+                  pages.add(
+                    pw.Table(
+                      border: pw.TableBorder.all(),
+                      children: List.generate(rows, (row) {
+                        return pw.TableRow(
+                          children: List.generate(cols, (col) {
+                            final student = currentArrangements.firstWhere(
+                              (arr) =>
+                                  arr['row_no'] == row &&
+                                  arr['column_no'] == col,
+                              orElse: () => <String, dynamic>{},
+                            );
+
+                            final seatNumber = row * cols + col + 1;
+
+                            return pw.Container(
+                              height: 40,
+                              padding: const pw.EdgeInsets.all(4),
+                              child: pw.Column(
+                                mainAxisAlignment: pw.MainAxisAlignment.center,
+                                children: [
+                                  pw.Text(
+                                    'S$seatNumber',
+                                    style: const pw.TextStyle(fontSize: 8),
+                                  ),
+                                  if (student.isNotEmpty) ...[
+                                    pw.SizedBox(height: 2),
+                                    pw.Text(
+                                      student['student_reg_no'].toString(),
+                                      style: const pw.TextStyle(fontSize: 10),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          }),
+                        );
+                      }),
+                    ),
+                  );
+
+                  return pages;
+                },
+              ),
+            );
+          }
+        }
+      }
+
+      // Save and open the PDF
+      final output = await getTemporaryDirectory();
+      final file = File(
+        '${output.path}/seating_arrangements_${DateFormat('yyyy_MM_dd').format(DateTime.now())}.pdf',
+      );
+      await file.writeAsBytes(await pdf.save());
+
+      final uri = Uri.file(file.path);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else {
+        throw 'Could not open the PDF file';
+      }
+    } catch (error) {
+      developer.log('Error generating PDF: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating PDF: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _showHallSelectionDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select Hall'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: _halls.length,
+            itemBuilder: (context, index) {
+              final hall = _halls[index];
+              final hallId = hall['hall_id'];
+              final hasArrangements = _seatingArrangements.containsKey(hallId);
+              final arrangementCount = hasArrangements
+                  ? _seatingArrangements[hallId]!
+                      .values
+                      .expand((arrangements) => arrangements)
+                      .length
+                  : 0;
+
+              return ListTile(
+                enabled: hasArrangements,
+                leading: Icon(
+                  Icons.domain,
+                  color: hasArrangements ? Colors.green : Colors.grey,
+                ),
+                title: Text(hallId),
+                subtitle: Text(
+                  hasArrangements
+                      ? '$arrangementCount arrangements'
+                      : 'No arrangements',
+                ),
+                onTap: hasArrangements
+                    ? () {
+                        Navigator.pop(context);
+                        _showDeleteHallConfirmation(hallId);
+                      }
+                    : null,
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteSeatingArrangementsByHall(String hallId) async {
+    try {
+      setState(() => _isLoading = true);
+
+      await Supabase.instance.client
+          .from('seating_arr')
+          .delete()
+          .eq('hall_id', hallId);
+
+      await _loadData();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Seating arrangements deleted successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (error) {
+      developer.log('Error deleting seating arrangements: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error deleting seating arrangements: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _showDeleteHallConfirmation(String hallId) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Delete'),
+        content: Text(
+            'Are you sure you want to delete all seating arrangements for hall $hallId?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteSeatingArrangementsByHall(hallId);
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
   }
 }
 

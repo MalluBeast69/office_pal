@@ -803,13 +803,20 @@ class _StudentDashboardPageState extends ConsumerState<StudentDashboardPage> {
     if (examSeatingArrangements.isEmpty) return null;
 
     final now = DateTime.now();
-    return examSeatingArrangements
+    final futureExams = examSeatingArrangements
         .where((arr) => DateTime.parse(arr['exam']['exam_date']).isAfter(now))
-        .reduce((a, b) {
+        .toList();
+
+    if (futureExams.isEmpty) return null;
+
+    // Sort by date and return the earliest future exam
+    futureExams.sort((a, b) {
       final dateA = DateTime.parse(a['exam']['exam_date']);
       final dateB = DateTime.parse(b['exam']['exam_date']);
-      return dateA.isBefore(dateB) ? a : b;
-    })['exam'];
+      return dateA.compareTo(dateB);
+    });
+
+    return futureExams.first['exam'];
   }
 }
 

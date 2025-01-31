@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:developer' as developer;
-import 'timetable_generation_page.dart';
 import 'package:intl/intl.dart';
 import 'package:office_pal/features/controller/presentation/providers/exam_provider.dart';
 import 'package:office_pal/features/controller/presentation/providers/course_provider.dart';
@@ -913,21 +912,14 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
         title: const Text('Exam Management'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: 'Add Exam',
+            onPressed: _showManualGenerationDialog,
+          ),
+          IconButton(
             icon: const Icon(Icons.upload_file),
             tooltip: 'Import Excel',
             onPressed: _importFromExcel,
-          ),
-          IconButton(
-            icon: const Icon(Icons.calendar_month),
-            tooltip: 'Generate Timetable',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const TimetableGenerationPage(),
-                ),
-              );
-            },
           ),
           IconButton(
             icon: const Icon(Icons.table_chart),

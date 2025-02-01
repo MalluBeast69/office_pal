@@ -11,6 +11,8 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:html' as html;
 
 class SeatingManagementPage extends ConsumerStatefulWidget {
   const SeatingManagementPage({Key? key}) : super(key: key);
@@ -1744,11 +1746,18 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
           final halls = sessions[session]!;
           if (halls.isEmpty) continue;
 
+          // Get all unique exams for this session
           final examsInSession = halls.values
               .expand((students) => students)
               .map((arr) => arr['exam'])
               .toSet()
               .toList();
+
+          if (examsInSession.isEmpty) continue;
+
+          // Sort exams by course ID for consistent display
+          examsInSession.sort((a, b) =>
+              (a['course_id'] as String).compareTo(b['course_id'] as String));
 
           // Add page for this date and session (containing all halls)
           pdf.addPage(
@@ -1787,11 +1796,6 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                           'Time: ${examsInSession.first['time']}',
                           style: normalStyle,
                         ),
-                        pw.SizedBox(height: 4),
-                        pw.Text(
-                          'Exams: ${examsInSession.map((e) => '${e['course_id']} - ${e['course_name']}').join(', ')}',
-                          style: smallStyle,
-                        ),
                       ],
                     ),
                   ),
@@ -1802,7 +1806,10 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                 // Process each hall vertically
                 for (final hallId in halls.keys) {
                   final students = halls[hallId]!;
-                  final hall = _halls.firstWhere((h) => h['hall_id'] == hallId);
+                  final hall = _halls.firstWhere(
+                    (h) => h['hall_id'] == hallId,
+                    orElse: () => throw Exception('Hall $hallId not found'),
+                  );
                   final rows = hall['no_of_rows'] as int;
                   final cols = hall['no_of_columns'] as int;
 
@@ -1896,18 +1903,35 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
         }
       }
 
-      // Generate filename and save PDF
+      // Generate filename
       final filename =
           'seating_arrangements_${DateFormat('yyyy_MM_dd').format(DateTime.now())}.pdf';
-      final output = await getTemporaryDirectory();
-      final file = File('${output.path}/$filename');
-      await file.writeAsBytes(await pdf.save());
 
-      final uri = Uri.file(file.path);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
+      // Handle download based on platform
+      if (kIsWeb) {
+        // For web platform - direct download
+        final bytes = await pdf.save();
+        final blob = html.Blob([bytes], 'application/pdf');
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        final anchor = html.AnchorElement()
+          ..href = url
+          ..style.display = 'none'
+          ..download = filename;
+        html.document.body!.children.add(anchor);
+        anchor.click();
+        html.Url.revokeObjectUrl(url);
       } else {
-        throw 'Could not open the PDF file';
+        // For native platforms - use temporary directory
+        final output = await getTemporaryDirectory();
+        final file = File('${output.path}/$filename');
+        await file.writeAsBytes(await pdf.save());
+
+        final uri = Uri.file(file.path);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri);
+        } else {
+          throw 'Could not open the PDF file';
+        }
       }
 
       setState(() => _isLoading = false);
@@ -2039,13 +2063,15 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
   }
 
   String _getSessionDisplayName(String session) {
-    switch (session) {
+    switch (session.toUpperCase()) {
       case 'FN':
         return 'Morning';
       case 'AN':
         return 'Afternoon';
+      case 'EN':
+        return 'Evening';
       default:
-        throw Exception('Unknown session format');
+        return session; // Return original value if unknown
     }
   }
 }

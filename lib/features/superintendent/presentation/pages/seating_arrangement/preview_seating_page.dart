@@ -11,6 +11,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:math' as math;
 import '../../pages/student_management_page.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:html' as html;
 
 class PreviewSeatingPage extends ConsumerStatefulWidget {
   final List<Map<String, dynamic>> exams;
@@ -1711,20 +1713,37 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
         }
       }
 
-      // Generate filename and save PDF
+      // Generate filename
       final filename = printAll
           ? 'seating_arrangement_all_${DateFormat('yyyy_MM_dd').format(DateTime.now())}.pdf'
           : 'seating_arrangement_${DateFormat('yyyy_MM_dd').format(_selectedDate!)}_${_selectedSession}.pdf';
 
-      final output = await getTemporaryDirectory();
-      final file = File('${output.path}/$filename');
-      await file.writeAsBytes(await pdf.save());
-
-      final uri = Uri.file(file.path);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
+      // Handle download based on platform
+      if (kIsWeb) {
+        // For web platform - direct download
+        final bytes = await pdf.save();
+        final blob = html.Blob([bytes], 'application/pdf');
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        final anchor = html.AnchorElement()
+          ..href = url
+          ..style.display = 'none'
+          ..download = filename;
+        html.document.body!.children.add(anchor);
+        anchor.click();
+        html.document.body!.children.remove(anchor);
+        html.Url.revokeObjectUrl(url);
       } else {
-        throw 'Could not open the PDF file';
+        // For native platforms - use temporary directory
+        final output = await getTemporaryDirectory();
+        final file = File('${output.path}/$filename');
+        await file.writeAsBytes(await pdf.save());
+
+        final uri = Uri.file(file.path);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri);
+        } else {
+          throw 'Could not open the PDF file';
+        }
       }
 
       setState(() => _isLoading = false);

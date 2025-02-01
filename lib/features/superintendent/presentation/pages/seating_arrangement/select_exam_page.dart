@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:table_calendar/table_calendar.dart';
 import 'package:office_pal/features/controller/presentation/providers/exam_provider.dart';
 import 'select_students_page.dart';
 
@@ -16,6 +17,8 @@ class _SelectExamPageState extends ConsumerState<SelectExamPage> {
   DateTime? _selectedDate;
   String? _selectedSession;
   Set<Map<String, dynamic>> _selectedExams = {};
+  DateTime _focusedDay = DateTime.now();
+  CalendarFormat _calendarFormat = CalendarFormat.month;
 
   List<Map<String, dynamic>> _filterExams(List<Map<String, dynamic>> exams) {
     return exams.where((exam) {
@@ -46,6 +49,19 @@ class _SelectExamPageState extends ConsumerState<SelectExamPage> {
 
       return true;
     }).toList();
+  }
+
+  // Helper method to get exam dates
+  Set<DateTime> _getExamDates(List<Map<String, dynamic>> exams) {
+    return exams.map((exam) => DateTime.parse(exam['exam_date'])).toSet();
+  }
+
+  // Helper method to check if a day has exams
+  bool _hasExamsOnDay(DateTime day, Set<DateTime> examDates) {
+    return examDates.any((examDate) =>
+        examDate.year == day.year &&
+        examDate.month == day.month &&
+        examDate.day == day.day);
   }
 
   @override
@@ -95,7 +111,7 @@ class _SelectExamPageState extends ConsumerState<SelectExamPage> {
           ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(120),
+          preferredSize: const Size.fromHeight(180),
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -113,148 +129,182 @@ class _SelectExamPageState extends ConsumerState<SelectExamPage> {
                   onChanged: (value) => setState(() => _searchQuery = value),
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.calendar_today),
-                        label: Text(_selectedDate == null
-                            ? 'Select Date'
-                            : DateFormat('MMM d, y').format(_selectedDate!)),
-                        onPressed: () async {
-                          final date = await showDatePicker(
-                            context: context,
-                            initialDate: _selectedDate ?? DateTime.now(),
-                            firstDate: DateTime.now(),
-                            lastDate:
-                                DateTime.now().add(const Duration(days: 365)),
-                          );
-                          if (date != null) {
-                            setState(() => _selectedDate = date);
-                          }
-                        },
-                      ),
+                DropdownButtonFormField<String>(
+                  value: _selectedSession,
+                  decoration: const InputDecoration(
+                    labelText: 'Session',
+                    border: OutlineInputBorder(),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: null,
+                      child: Text('All Sessions'),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        value: _selectedSession,
-                        decoration: const InputDecoration(
-                          labelText: 'Session',
-                          border: OutlineInputBorder(),
-                          contentPadding:
-                              EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                            value: null,
-                            child: Text('All Sessions'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'MORNING',
-                            child: Text('Morning'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'AFTERNOON',
-                            child: Text('Afternoon'),
-                          ),
-                        ],
-                        onChanged: (value) =>
-                            setState(() => _selectedSession = value),
-                      ),
+                    DropdownMenuItem(
+                      value: 'MORNING',
+                      child: Text('Morning'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'AFTERNOON',
+                      child: Text('Afternoon'),
                     ),
                   ],
+                  onChanged: (value) =>
+                      setState(() => _selectedSession = value),
                 ),
               ],
             ),
           ),
         ),
       ),
-      body: examsAsync.when(
-        data: (exams) {
-          final filteredExams = _filterExams(exams);
-
-          if (filteredExams.isEmpty) {
-            return const Center(
-              child: Text('No exams found'),
-            );
-          }
-
-          return Column(
-            children: [
-              Expanded(
-                child: ListView.builder(
-                  itemCount: filteredExams.length,
-                  padding: const EdgeInsets.all(16),
-                  itemBuilder: (context, index) {
-                    final exam = filteredExams[index];
-                    final examDate = DateTime.parse(exam['exam_date']);
-                    final isSelected = _selectedExams
-                        .any((e) => e['exam_id'] == exam['exam_id']);
-
-                    return Card(
-                      child: CheckboxListTile(
-                        value: isSelected,
-                        onChanged: (value) {
-                          setState(() {
-                            if (value == true) {
-                              _selectedExams.add(exam);
-                            } else {
-                              _selectedExams.removeWhere(
-                                  (e) => e['exam_id'] == exam['exam_id']);
-                            }
-                          });
-                        },
-                        title: Text('${exam['course_id']}'),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                                'Date: ${DateFormat('MMM d, y').format(examDate)}'),
-                            Text(
-                                'Session: ${exam['session']}, Time: ${exam['time']}, Duration: ${exam['duration']} mins'),
-                          ],
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            Card(
+              margin: const EdgeInsets.all(16.0),
+              child: TableCalendar(
+                firstDay: DateTime.now(),
+                lastDay: DateTime.now().add(const Duration(days: 365)),
+                focusedDay: _focusedDay,
+                calendarFormat: _calendarFormat,
+                selectedDayPredicate: (day) {
+                  return _selectedDate != null &&
+                      isSameDay(_selectedDate!, day);
+                },
+                onDaySelected: (selectedDay, focusedDay) {
+                  setState(() {
+                    _selectedDate = selectedDay;
+                    _focusedDay = focusedDay;
+                  });
+                },
+                onFormatChanged: (format) {
+                  setState(() {
+                    _calendarFormat = format;
+                  });
+                },
+                onPageChanged: (focusedDay) {
+                  _focusedDay = focusedDay;
+                },
+                calendarBuilders: CalendarBuilders(
+                  markerBuilder: (context, date, events) {
+                    final exams = ref.watch(examsProvider).value ?? [];
+                    final examDates = _getExamDates(exams);
+                    if (_hasExamsOnDay(date, examDates)) {
+                      return Positioned(
+                        bottom: 1,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          width: 6.0,
+                          height: 6.0,
                         ),
-                      ),
-                    );
+                      );
+                    }
+                    return null;
                   },
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Selected: ${_selectedExams.length} exams',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                    ),
-                    FilledButton.icon(
-                      icon: const Icon(Icons.arrow_forward),
-                      label: const Text('Next'),
-                      onPressed: _selectedExams.isEmpty
-                          ? null
-                          : () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => SelectStudentsPage(
-                                    exams: _selectedExams.toList(),
-                                  ),
-                                ),
-                              );
-                            },
-                    ),
-                  ],
+                calendarStyle: CalendarStyle(
+                  todayDecoration: BoxDecoration(
+                    color:
+                        Theme.of(context).colorScheme.primary.withOpacity(0.5),
+                    shape: BoxShape.circle,
+                  ),
+                  selectedDecoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary,
+                    shape: BoxShape.circle,
+                  ),
                 ),
               ),
-            ],
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(
-          child: Text('Error: $error'),
+            ),
+            SizedBox(
+              height: 400, // Fixed height for the exam list
+              child: examsAsync.when(
+                data: (exams) {
+                  final filteredExams = _filterExams(exams);
+
+                  if (filteredExams.isEmpty) {
+                    return const Center(
+                      child: Text('No exams found'),
+                    );
+                  }
+
+                  return ListView.builder(
+                    itemCount: filteredExams.length,
+                    padding: const EdgeInsets.all(16),
+                    itemBuilder: (context, index) {
+                      final exam = filteredExams[index];
+                      final examDate = DateTime.parse(exam['exam_date']);
+                      final isSelected = _selectedExams
+                          .any((e) => e['exam_id'] == exam['exam_id']);
+
+                      return Card(
+                        child: CheckboxListTile(
+                          value: isSelected,
+                          onChanged: (value) {
+                            setState(() {
+                              if (value == true) {
+                                _selectedExams.add(exam);
+                              } else {
+                                _selectedExams.removeWhere(
+                                    (e) => e['exam_id'] == exam['exam_id']);
+                              }
+                            });
+                          },
+                          title: Text('${exam['course_id']}'),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                  'Date: ${DateFormat('MMM d, y').format(examDate)}'),
+                              Text(
+                                  'Session: ${exam['session']}, Time: ${exam['time']}, Duration: ${exam['duration']} mins'),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, stack) => Center(
+                  child: Text('Error: $error'),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Selected: ${_selectedExams.length} exams',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  FilledButton.icon(
+                    icon: const Icon(Icons.arrow_forward),
+                    label: const Text('Next'),
+                    onPressed: _selectedExams.isEmpty
+                        ? null
+                        : () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => SelectStudentsPage(
+                                  exams: _selectedExams.toList(),
+                                ),
+                              ),
+                            );
+                          },
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -32,10 +32,18 @@ class _SelectStudentsPageState extends ConsumerState<SelectStudentsPage> {
       // Get course IDs from selected exams
       final courseIds = widget.exams.map((e) => e['course_id']).toSet();
 
-      final response = await Supabase.instance.client
-          .from('registered_students')
-          .select()
-          .in_('course_code', courseIds.toList());
+      // Load registered students with student details
+      final response =
+          await Supabase.instance.client.from('registered_students').select('''
+            student_reg_no,
+            is_reguler,
+            course_code,
+            student:student_reg_no (
+              student_name,
+              dept_id,
+              semester
+            )
+          ''').in_('course_code', courseIds.toList());
 
       if (mounted) {
         setState(() {
@@ -60,8 +68,10 @@ class _SelectStudentsPageState extends ConsumerState<SelectStudentsPage> {
     return _students.where((student) {
       // Search filter
       final regNo = student['student_reg_no']?.toString().toLowerCase() ?? '';
+      final studentName =
+          student['student']?['student_name']?.toString().toLowerCase() ?? '';
       final searchLower = _searchQuery.toLowerCase();
-      if (!regNo.contains(searchLower)) {
+      if (!regNo.contains(searchLower) && !studentName.contains(searchLower)) {
         return false;
       }
 
@@ -82,34 +92,50 @@ class _SelectStudentsPageState extends ConsumerState<SelectStudentsPage> {
       appBar: AppBar(
         title: const Text('Select Students'),
         actions: [
-          TextButton.icon(
-            icon: Icon(
-              filteredStudents.every((student) =>
-                      _selectedStudents.contains(student['student_reg_no']))
-                  ? Icons.deselect
-                  : Icons.select_all,
-              color: Theme.of(context).colorScheme.onPrimary,
-            ),
-            label: Text(
-              filteredStudents.every((student) =>
-                      _selectedStudents.contains(student['student_reg_no']))
-                  ? 'Deselect All'
-                  : 'Select All',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onPrimary,
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: filteredStudents.every((student) =>
+                        _selectedStudents.contains(student['student_reg_no']))
+                    ? Theme.of(context).colorScheme.error.withOpacity(0.9)
+                    : Theme.of(context).colorScheme.primaryContainer,
+                foregroundColor: filteredStudents.every((student) =>
+                        _selectedStudents.contains(student['student_reg_no']))
+                    ? Theme.of(context).colorScheme.onError
+                    : Theme.of(context).colorScheme.onPrimaryContainer,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               ),
+              icon: Icon(
+                filteredStudents.every((student) =>
+                        _selectedStudents.contains(student['student_reg_no']))
+                    ? Icons.deselect
+                    : Icons.select_all,
+                size: 20,
+              ),
+              label: Text(
+                filteredStudents.every((student) =>
+                        _selectedStudents.contains(student['student_reg_no']))
+                    ? 'Deselect All'
+                    : 'Select All',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              onPressed: () {
+                setState(() {
+                  if (filteredStudents.every((student) =>
+                      _selectedStudents.contains(student['student_reg_no']))) {
+                    _selectedStudents.clear();
+                  } else {
+                    _selectedStudents.addAll(filteredStudents
+                        .map((s) => s['student_reg_no'] as String));
+                  }
+                });
+              },
             ),
-            onPressed: () {
-              setState(() {
-                if (filteredStudents.every((student) =>
-                    _selectedStudents.contains(student['student_reg_no']))) {
-                  _selectedStudents.clear();
-                } else {
-                  _selectedStudents.addAll(filteredStudents
-                      .map((s) => s['student_reg_no'] as String));
-                }
-              });
-            },
           ),
         ],
         bottom: PreferredSize(
@@ -120,7 +146,7 @@ class _SelectStudentsPageState extends ConsumerState<SelectStudentsPage> {
               children: [
                 TextField(
                   decoration: InputDecoration(
-                    hintText: 'Search by registration number',
+                    hintText: 'Search by name or registration number',
                     prefixIcon: const Icon(Icons.search),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -148,70 +174,277 @@ class _SelectStudentsPageState extends ConsumerState<SelectStudentsPage> {
           : Column(
               children: [
                 Expanded(
-                  child: ListView.builder(
-                    itemCount: filteredStudents.length,
-                    padding: const EdgeInsets.all(16),
-                    itemBuilder: (context, index) {
-                      final student = filteredStudents[index];
-                      final regNo = student['student_reg_no'];
-                      final isSelected = _selectedStudents.contains(regNo);
-
-                      return Card(
-                        child: CheckboxListTile(
-                          value: isSelected,
-                          onChanged: (value) {
-                            setState(() {
-                              if (value == true) {
-                                _selectedStudents.add(regNo);
-                              } else {
-                                _selectedStudents.remove(regNo);
-                              }
-                            });
-                          },
-                          title: Text(regNo),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Type: ${student['is_reguler'] ? 'Regular' : 'Supplementary'}',
-                              ),
-                              Text('Course: ${student['course_code']}'),
-                            ],
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        // Hint card
+                        Card(
+                          margin: const EdgeInsets.all(16.0),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(Icons.info_outline,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Selected Exams',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: widget.exams.map((exam) {
+                                    return Chip(
+                                      label: Text(
+                                        '${exam['course_id']} (${exam['session']})',
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Showing only students registered for these exams',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      );
-                    },
+                        // Student list
+                        GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount:
+                                MediaQuery.of(context).size.width > 600 ? 5 : 4,
+                            childAspectRatio: 1.8,
+                            crossAxisSpacing: 6,
+                            mainAxisSpacing: 6,
+                          ),
+                          itemCount: filteredStudents.length,
+                          itemBuilder: (context, index) {
+                            final student = filteredStudents[index];
+                            final regNo = student['student_reg_no'];
+                            final studentDetails =
+                                student['student'] as Map<String, dynamic>;
+                            final isSelected =
+                                _selectedStudents.contains(regNo);
+
+                            return Card(
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                                side: BorderSide(
+                                  color: isSelected
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Theme.of(context)
+                                          .colorScheme
+                                          .outline
+                                          .withOpacity(0.5),
+                                ),
+                              ),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(6),
+                                onTap: () {
+                                  setState(() {
+                                    if (isSelected) {
+                                      _selectedStudents.remove(regNo);
+                                    } else {
+                                      _selectedStudents.add(regNo);
+                                    }
+                                  });
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.all(6.0),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  studentDetails[
+                                                      'student_name'],
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 11,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                                Text(
+                                                  regNo,
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodySmall
+                                                      ?.copyWith(
+                                                        fontSize: 9,
+                                                      ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          SizedBox(
+                                            height: 16,
+                                            width: 16,
+                                            child: Checkbox(
+                                              value: isSelected,
+                                              onChanged: (value) {
+                                                setState(() {
+                                                  if (value == true) {
+                                                    _selectedStudents
+                                                        .add(regNo);
+                                                  } else {
+                                                    _selectedStudents
+                                                        .remove(regNo);
+                                                  }
+                                                });
+                                              },
+                                              materialTapTargetSize:
+                                                  MaterialTapTargetSize
+                                                      .shrinkWrap,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const Spacer(),
+                                      Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 4,
+                                              vertical: 1,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: student['is_reguler']
+                                                  ? Colors.green
+                                                      .withOpacity(0.1)
+                                                  : Colors.orange
+                                                      .withOpacity(0.1),
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                              border: Border.all(
+                                                color: student['is_reguler']
+                                                    ? Colors.green
+                                                        .withOpacity(0.2)
+                                                    : Colors.orange
+                                                        .withOpacity(0.2),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              student['is_reguler'] ? 'R' : 'S',
+                                              style: TextStyle(
+                                                color: student['is_reguler']
+                                                    ? Colors.green
+                                                    : Colors.orange,
+                                                fontSize: 9,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 3),
+                                          Expanded(
+                                            child: Text(
+                                              student['course_code'],
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall
+                                                  ?.copyWith(
+                                                    fontSize: 9,
+                                                  ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      Text(
+                                        '${studentDetails['dept_id']} - ${studentDetails['semester']}',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              fontSize: 9,
+                                            ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Selected: ${_selectedStudents.length} students',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ),
-                      FilledButton.icon(
-                        icon: const Icon(Icons.arrow_forward),
-                        label: const Text('Next'),
-                        onPressed: _selectedStudents.isEmpty
-                            ? null
-                            : () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => SelectHallsPage(
-                                      exams: widget.exams,
-                                      selectedStudents:
-                                          _selectedStudents.toList(),
-                                    ),
-                                  ),
-                                );
-                              },
+                // Fixed bottom action bar
+                Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, -2),
                       ),
                     ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Selected: ${_selectedStudents.length} students',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        FilledButton.icon(
+                          icon: const Icon(Icons.arrow_forward),
+                          label: const Text('Next'),
+                          onPressed: _selectedStudents.isEmpty
+                              ? null
+                              : () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => SelectHallsPage(
+                                        exams: widget.exams,
+                                        selectedStudents:
+                                            _selectedStudents.toList(),
+                                      ),
+                                    ),
+                                  );
+                                },
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],

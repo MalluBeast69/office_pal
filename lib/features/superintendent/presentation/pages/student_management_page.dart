@@ -912,7 +912,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
                                 size: 64, color: Colors.grey[400]),
                             const SizedBox(height: 16),
                             Text(
-                              'No students found',
+                          'No students found',
                               style: TextStyle(
                                 fontSize: 18,
                                 color: Colors.grey[600],
@@ -951,28 +951,28 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
                               onTap: () => _viewStudentCourses(
                                   student['student_reg_no']),
                               borderRadius: BorderRadius.circular(12),
-                              child: Padding(
+                            child: Padding(
                                 padding: const EdgeInsets.all(12),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                student['student_name'],
-                                                style: const TextStyle(
-                                                  fontSize: 16,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              student['student_name'],
+                                              style: const TextStyle(
+                                                fontSize: 16,
                                                   fontWeight: FontWeight.bold,
-                                                ),
+                                              ),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
-                                              ),
-                                              const SizedBox(height: 4),
+                                            ),
+                                            const SizedBox(height: 4),
                                               Text(
                                                 student['student_reg_no'],
                                                 style: TextStyle(
@@ -1040,16 +1040,16 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
                                     const Spacer(),
                                     Row(
                                       children: [
-                                        Container(
+                                              Container(
                                           padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
+                                                  horizontal: 8,
+                                                  vertical: 4,
+                                                ),
+                                                decoration: BoxDecoration(
                                             color: Colors.blue.withOpacity(0.1),
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                            border: Border.all(
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                  border: Border.all(
                                               color: Colors.blue,
                                             ),
                                           ),
@@ -1057,7 +1057,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
                                             student['dept_id'],
                                             style: const TextStyle(
                                               color: Colors.blue,
-                                              fontSize: 12,
+                                                        fontSize: 12,
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),

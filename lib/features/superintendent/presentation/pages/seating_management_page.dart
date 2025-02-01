@@ -1707,10 +1707,22 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
       // Create PDF document
       final pdf = pw.Document();
 
-      // For each date and session
+      // Define consistent cell size and styling
+      const double cellHeight = 50.0; // Fixed height for each cell
+      const double cellPadding = 8.0;
+      final headerStyle = pw.TextStyle(
+        fontSize: 14,
+        fontWeight: pw.FontWeight.bold,
+      );
+      final normalStyle = const pw.TextStyle(fontSize: 10);
+      final smallStyle = const pw.TextStyle(fontSize: 8);
+
+      // For each hall and its arrangements
       for (final hallId in _seatingArrangements.keys) {
-        for (final date in _seatingArrangements[hallId]!.keys) {
-          final arrangements = _seatingArrangements[hallId]![date]!;
+        final hallArrangements = _seatingArrangements[hallId]!;
+
+        for (final date in hallArrangements.keys) {
+          final arrangements = hallArrangements[date]!;
 
           // Group arrangements by session
           final sessionArrangements = <String, List<Map<String, dynamic>>>{};
@@ -1725,19 +1737,23 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
             final currentArrangements = sessionArrangements[session]!;
             if (currentArrangements.isEmpty) continue;
 
+            final examsInSession =
+                currentArrangements.map((arr) => arr['exam']).toSet().toList();
+
             // Add page for this session
             pdf.addPage(
               pw.MultiPage(
                 pageFormat: PdfPageFormat.a4,
+                margin: const pw.EdgeInsets.all(20),
                 build: (context) {
                   final pages = <pw.Widget>[];
 
-                  // Header
+                  // Header section
                   pages.add(
                     pw.Container(
                       padding: const pw.EdgeInsets.all(10),
                       decoration: pw.BoxDecoration(
-                        border: pw.Border.all(),
+                        border: pw.Border.all(width: 1),
                         borderRadius:
                             const pw.BorderRadius.all(pw.Radius.circular(5)),
                       ),
@@ -1746,17 +1762,21 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                         children: [
                           pw.Text(
                             'Examination Seating Arrangement',
-                            style: pw.TextStyle(
-                              fontSize: 16,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
+                            style: headerStyle,
                           ),
                           pw.SizedBox(height: 8),
                           pw.Text(
                             'Date: ${DateFormat('MMMM d, y').format(DateTime.parse(date))}',
+                            style: normalStyle,
                           ),
-                          pw.Text('Session: $session'),
-                          pw.Text('Hall: $hallId'),
+                          pw.Text(
+                            'Session: ${session == 'FN' ? 'Morning' : 'Afternoon'}',
+                            style: normalStyle,
+                          ),
+                          pw.Text(
+                            'Time: ${examsInSession.first['time']}',
+                            style: normalStyle,
+                          ),
                         ],
                       ),
                     ),
@@ -1766,50 +1786,79 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
 
                   // Get hall details
                   final hall = _halls.firstWhere((h) => h['hall_id'] == hallId);
+
+                  // Hall header
+                  pages.add(
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      color: PdfColors.grey200,
+                      child: pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.center,
+                        children: [
+                          pw.Text('Hall: ${hall['hall_id']}',
+                              style: headerStyle),
+                        ],
+                      ),
+                    ),
+                  );
+
+                  pages.add(pw.SizedBox(height: 10));
+
+                  // Create seating grid
                   final rows = hall['no_of_rows'] as int;
                   final cols = hall['no_of_columns'] as int;
 
-                  // Create seating grid
-                  pages.add(
-                    pw.Table(
-                      border: pw.TableBorder.all(),
-                      children: List.generate(rows, (row) {
-                        return pw.TableRow(
-                          children: List.generate(cols, (col) {
-                            final student = currentArrangements.firstWhere(
-                              (arr) =>
-                                  arr['row_no'] == row &&
-                                  arr['column_no'] == col,
-                              orElse: () => <String, dynamic>{},
-                            );
+                  // Calculate cell width based on page width and number of columns
+                  final pageWidth = PdfPageFormat.a4.availableWidth -
+                      40; // Account for margins
+                  final cellWidth = pageWidth / cols;
 
-                            final seatNumber = row * cols + col + 1;
+                  final tableRows = List<pw.TableRow>.generate(rows, (row) {
+                    return pw.TableRow(
+                      children: List<pw.Widget>.generate(cols, (col) {
+                        final student = currentArrangements.firstWhere(
+                          (arr) =>
+                              arr['row_no'] == row && arr['column_no'] == col,
+                          orElse: () => <String, dynamic>{},
+                        );
+                        final seatNumber = row * cols + col + 1;
 
-                            return pw.Container(
-                              height: 40,
-                              padding: const pw.EdgeInsets.all(4),
-                              child: pw.Column(
-                                mainAxisAlignment: pw.MainAxisAlignment.center,
-                                children: [
-                                  pw.Text(
-                                    'S$seatNumber',
-                                    style: const pw.TextStyle(fontSize: 8),
-                                  ),
-                                  if (student.isNotEmpty) ...[
-                                    pw.SizedBox(height: 2),
-                                    pw.Text(
-                                      student['student_reg_no'].toString(),
-                                      style: const pw.TextStyle(fontSize: 10),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            );
-                          }),
+                        return pw.Container(
+                          height: cellHeight,
+                          padding: const pw.EdgeInsets.all(cellPadding),
+                          decoration: pw.BoxDecoration(
+                            border: pw.Border.all(width: 0.5),
+                          ),
+                          child: pw.Column(
+                            mainAxisAlignment: pw.MainAxisAlignment.center,
+                            children: [
+                              pw.Text('S$seatNumber', style: smallStyle),
+                              if (student.isNotEmpty) ...[
+                                pw.SizedBox(height: 4),
+                                pw.Text(
+                                  student['student_reg_no'].toString(),
+                                  style: normalStyle,
+                                  textAlign: pw.TextAlign.center,
+                                ),
+                              ],
+                            ],
+                          ),
                         );
                       }),
+                    );
+                  });
+
+                  pages.add(
+                    pw.Table(
+                      border: pw.TableBorder.all(width: 0.5),
+                      children: tableRows,
                     ),
                   );
+
+                  pages.add(pw.SizedBox(height: 20));
 
                   return pages;
                 },
@@ -1819,11 +1868,11 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
         }
       }
 
-      // Save and open the PDF
+      // Generate filename and save PDF
+      final filename =
+          'seating_arrangements_${DateFormat('yyyy_MM_dd').format(DateTime.now())}.pdf';
       final output = await getTemporaryDirectory();
-      final file = File(
-        '${output.path}/seating_arrangements_${DateFormat('yyyy_MM_dd').format(DateTime.now())}.pdf',
-      );
+      final file = File('${output.path}/$filename');
       await file.writeAsBytes(await pdf.save());
 
       final uri = Uri.file(file.path);
@@ -1832,6 +1881,8 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
       } else {
         throw 'Could not open the PDF file';
       }
+
+      setState(() => _isLoading = false);
     } catch (error) {
       developer.log('Error generating PDF: $error');
       if (mounted) {
@@ -1841,9 +1892,6 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
             backgroundColor: Colors.red,
           ),
         );
-      }
-    } finally {
-      if (mounted) {
         setState(() => _isLoading = false);
       }
     }

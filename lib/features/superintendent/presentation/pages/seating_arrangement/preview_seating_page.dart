@@ -11,10 +11,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:math' as math;
 import '../../pages/student_management_page.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:universal_html/html.dart' as html;
-import 'dart:io' if (dart.library.html) 'dart:js' as js;
-import 'package:office_pal/shared/services/pdf_service.dart';
 
 class PreviewSeatingPage extends ConsumerStatefulWidget {
   final List<Map<String, dynamic>> exams;
@@ -1519,14 +1515,12 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
       final pdf = pw.Document();
 
       // Define consistent cell size and styling
-      const double cellHeight = 50.0;
-      const double cellPadding = 8.0;
       final headerStyle = pw.TextStyle(
         fontSize: 14,
         fontWeight: pw.FontWeight.bold,
       );
-      final normalStyle = const pw.TextStyle(fontSize: 10);
-      final smallStyle = const pw.TextStyle(fontSize: 8);
+      final normalStyle = const pw.TextStyle(fontSize: 9);
+      final smallStyle = const pw.TextStyle(fontSize: 7);
 
       // Determine which arrangements to process
       final arrangementsToProcess = printAll
@@ -1538,18 +1532,41 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
               }
             };
 
-      // Generate seating arrangements for each date and session
+      // Group arrangements by date and session
+      final arrangementsByDateAndSession =
+          <String, Map<String, Map<String, List<Map<String, dynamic>>>>>{};
+
       for (final date in arrangementsToProcess.keys) {
         final sessions = arrangementsToProcess[date]!;
+        arrangementsByDateAndSession[date] = {};
+
         for (final session in sessions.keys) {
           final halls = sessions[session]!;
+          arrangementsByDateAndSession[date]![session] = {};
+
+          // Group by hall
+          for (final hallId in halls.keys) {
+            final students = halls[hallId]!;
+            arrangementsByDateAndSession[date]![session]![hallId] = students;
+          }
+        }
+      }
+
+      // Process each date and session
+      for (final date in arrangementsByDateAndSession.keys) {
+        final sessions = arrangementsByDateAndSession[date]!;
+
+        for (final session in sessions.keys) {
+          final halls = sessions[session]!;
+          if (halls.isEmpty) continue;
+
           final examsInSession = widget.exams
               .where((e) =>
                   e['exam_date'].toString().split(' ')[0] == date &&
                   e['session'] == session)
               .toList();
 
-          // Add page for this session
+          // Add page for this date and session (containing all halls)
           pdf.addPage(
             pw.MultiPage(
               pageFormat: PdfPageFormat.a4,
@@ -1579,14 +1596,14 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                           style: normalStyle,
                         ),
                         pw.Text(
-                          'Session: ${_getSessionDisplayName(session)}',
+                          'Session: ${session == 'FN' ? 'Morning' : 'Afternoon'}',
                           style: normalStyle,
                         ),
                         pw.Text(
                           'Time: ${examsInSession.first['time']}',
                           style: normalStyle,
                         ),
-                        pw.SizedBox(height: 8),
+                        pw.SizedBox(height: 4),
                         pw.Text(
                           'Exams: ${examsInSession.map((e) => '${e['course_id']} - ${e['course_name']}').join(', ')}',
                           style: smallStyle,
@@ -1596,12 +1613,21 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                   ),
                 );
 
-                pages.add(pw.SizedBox(height: 20));
+                pages.add(pw.SizedBox(height: 16));
 
-                // Process each hall
+                // Process each hall vertically
                 for (final hallId in halls.keys) {
                   final students = halls[hallId]!;
                   final hall = _halls.firstWhere((h) => h['hall_id'] == hallId);
+                  final rows = hall['no_of_rows'] as int;
+                  final cols = hall['no_of_columns'] as int;
+
+                  // Calculate optimal cell dimensions
+                  final pageWidth = PdfPageFormat.a4.availableWidth - 40;
+                  final cellWidth = pageWidth / cols;
+                  final cellHeight =
+                      math.min(30.0, 400 / rows); // Compact layout
+                  final double cellPadding = cellWidth < 30 ? 2.0 : 4.0;
 
                   // Hall header
                   pages.add(
@@ -1621,17 +1647,9 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                     ),
                   );
 
-                  pages.add(pw.SizedBox(height: 10));
+                  pages.add(pw.SizedBox(height: 8));
 
                   // Create seating grid
-                  final rows = hall['no_of_rows'] as int;
-                  final cols = hall['no_of_columns'] as int;
-
-                  // Calculate cell width based on page width and number of columns
-                  final pageWidth = PdfPageFormat.a4.availableWidth -
-                      40; // Account for margins
-                  final cellWidth = pageWidth / cols;
-
                   final tableRows = List<pw.TableRow>.generate(rows, (row) {
                     return pw.TableRow(
                       children: List<pw.Widget>.generate(cols, (col) {
@@ -1644,7 +1662,7 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                         return pw.Container(
                           height: cellHeight,
                           width: cellWidth,
-                          padding: const pw.EdgeInsets.all(cellPadding),
+                          padding: pw.EdgeInsets.all(cellPadding),
                           decoration: pw.BoxDecoration(
                             border: pw.Border.all(width: 0.5),
                           ),
@@ -1657,17 +1675,14 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                                 style: smallStyle,
                                 textAlign: pw.TextAlign.center,
                               ),
-                              pw.SizedBox(height: 4),
-                              if (student.isNotEmpty)
+                              if (student.isNotEmpty) ...[
+                                pw.SizedBox(height: cellHeight > 20 ? 2 : 1),
                                 pw.Text(
                                   student['student_reg_no'].toString(),
                                   style: normalStyle,
                                   textAlign: pw.TextAlign.center,
-                                )
-                              else
-                                pw.SizedBox(
-                                  height: normalStyle.fontSize ?? 10,
-                                ), // Maintain consistent height
+                                ),
+                              ],
                             ],
                           ),
                         );
@@ -1686,7 +1701,7 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                     ),
                   );
 
-                  pages.add(pw.SizedBox(height: 20));
+                  pages.add(pw.SizedBox(height: 16));
                 }
 
                 return pages;
@@ -1696,25 +1711,23 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
         }
       }
 
-      // Generate the PDF bytes
-      final bytes = await pdf.save();
-
-      // Generate filename
+      // Generate filename and save PDF
       final filename = printAll
           ? 'seating_arrangement_all_${DateFormat('yyyy_MM_dd').format(DateTime.now())}.pdf'
           : 'seating_arrangement_${DateFormat('yyyy_MM_dd').format(_selectedDate!)}_${_selectedSession}.pdf';
 
-      // Use the PDF service to save/download the file
-      await PdfService.savePdfFile(bytes, filename);
+      final output = await getTemporaryDirectory();
+      final file = File('${output.path}/$filename');
+      await file.writeAsBytes(await pdf.save());
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('PDF generated successfully'),
-            backgroundColor: Colors.green,
-          ),
-        );
+      final uri = Uri.file(file.path);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else {
+        throw 'Could not open the PDF file';
       }
+
+      setState(() => _isLoading = false);
     } catch (error) {
       developer.log('Error generating PDF: $error');
       if (mounted) {
@@ -1724,9 +1737,6 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
             backgroundColor: Colors.red,
           ),
         );
-      }
-    } finally {
-      if (mounted) {
         setState(() => _isLoading = false);
       }
     }

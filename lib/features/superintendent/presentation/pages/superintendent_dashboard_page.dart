@@ -11,7 +11,6 @@ import 'seating_arrangement/select_exam_page.dart';
 import 'seating_management_page.dart';
 import 'dart:convert';
 import 'dart:developer' as developer;
-import 'package:office_pal/shared/widgets/screen_size_warning_dialog.dart';
 
 class SuperintendentDashboardPage extends ConsumerStatefulWidget {
   const SuperintendentDashboardPage({super.key});
@@ -39,9 +38,6 @@ class _SuperintendentDashboardPageState
   void initState() {
     super.initState();
     _loadData();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ScreenSizeWarningDialog.showWarningIfNeeded(context, 'superintendent');
-    });
   }
 
   Future<void> _loadData() async {

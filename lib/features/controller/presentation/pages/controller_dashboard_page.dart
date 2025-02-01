@@ -8,7 +8,6 @@ import 'package:office_pal/features/controller/domain/services/holiday_service.d
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:office_pal/features/controller/presentation/pages/exam_management_page.dart';
-import 'package:office_pal/shared/widgets/screen_size_warning_dialog.dart';
 
 class ExamDateDialog extends StatelessWidget {
   final DateTime selectedDate;
@@ -118,14 +117,6 @@ class _ControllerDashboardPageState
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
   bool _showCalendar = true;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ScreenSizeWarningDialog.showWarningIfNeeded(context, 'controller');
-    });
-  }
 
   Future<void> _signOut(BuildContext context) async {
     try {

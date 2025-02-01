@@ -7,16 +7,22 @@ import 'package:url_launcher/url_launcher.dart';
 class PdfService {
   static Future<void> savePdfFile(List<int> bytes, String fileName) async {
     if (kIsWeb) {
-      // For web platform
+      // For web platform, use Blob with type application/pdf
       final blob = html.Blob([bytes], 'application/pdf');
+
+      // Create a download URL
       final url = html.Url.createObjectUrlFromBlob(blob);
-      final anchor = html.AnchorElement()
+
+      // Create an invisible link and trigger download
+      final anchor = html.document.createElement('a') as html.AnchorElement
         ..href = url
         ..style.display = 'none'
         ..download = fileName;
 
       html.document.body!.children.add(anchor);
       anchor.click();
+
+      // Clean up
       html.document.body!.children.remove(anchor);
       html.Url.revokeObjectUrl(url);
     } else {

@@ -1519,7 +1519,7 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
       final pdf = pw.Document();
 
       // Define consistent cell size and styling
-      const double cellHeight = 50.0; // Fixed height for each cell
+      const double cellHeight = 50.0;
       const double cellPadding = 8.0;
       final headerStyle = pw.TextStyle(
         fontSize: 14,
@@ -1696,14 +1696,25 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
         }
       }
 
+      // Generate the PDF bytes
       final bytes = await pdf.save();
+
+      // Generate filename
       final filename = printAll
           ? 'seating_arrangement_all_${DateFormat('yyyy_MM_dd').format(DateTime.now())}.pdf'
           : 'seating_arrangement_${DateFormat('yyyy_MM_dd').format(_selectedDate!)}_${_selectedSession}.pdf';
 
+      // Use the PDF service to save/download the file
       await PdfService.savePdfFile(bytes, filename);
 
-      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PDF generated successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     } catch (error) {
       developer.log('Error generating PDF: $error');
       if (mounted) {
@@ -1713,6 +1724,9 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
             backgroundColor: Colors.red,
           ),
         );
+      }
+    } finally {
+      if (mounted) {
         setState(() => _isLoading = false);
       }
     }

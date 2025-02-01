@@ -12,7 +12,7 @@ import 'package:uuid/uuid.dart';
 import 'dart:math' as math;
 import '../../pages/student_management_page.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'dart:html' as html;
+import 'package:universal_html/html.dart' as html;
 
 class PreviewSeatingPage extends ConsumerStatefulWidget {
   final List<Map<String, dynamic>> exams;
@@ -1713,30 +1713,29 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
         }
       }
 
-      // Generate filename
+      // Save PDF and handle download based on platform
+      final bytes = await pdf.save();
       final filename = printAll
           ? 'seating_arrangement_all_${DateFormat('yyyy_MM_dd').format(DateTime.now())}.pdf'
           : 'seating_arrangement_${DateFormat('yyyy_MM_dd').format(_selectedDate!)}_${_selectedSession}.pdf';
 
-      // Handle download based on platform
       if (kIsWeb) {
-        // For web platform - direct download
-        final bytes = await pdf.save();
+        // Web platform: Use blob and download
         final blob = html.Blob([bytes], 'application/pdf');
         final url = html.Url.createObjectUrlFromBlob(blob);
-        final anchor = html.AnchorElement()
+        final anchor = html.document.createElement('a') as html.AnchorElement
           ..href = url
           ..style.display = 'none'
           ..download = filename;
-        html.document.body!.children.add(anchor);
+        html.document.body?.children.add(anchor);
         anchor.click();
-        html.document.body!.children.remove(anchor);
+        html.document.body?.children.remove(anchor);
         html.Url.revokeObjectUrl(url);
       } else {
-        // For native platforms - use temporary directory
+        // Mobile/Desktop platforms: Use path_provider
         final output = await getTemporaryDirectory();
         final file = File('${output.path}/$filename');
-        await file.writeAsBytes(await pdf.save());
+        await file.writeAsBytes(bytes);
 
         final uri = Uri.file(file.path);
         if (await canLaunchUrl(uri)) {

@@ -12,7 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'dart:html' as html;
+import 'package:universal_html/html.dart' as html;
 
 class SeatingManagementPage extends ConsumerStatefulWidget {
   const SeatingManagementPage({Key? key}) : super(key: key);
@@ -1796,6 +1796,11 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                           'Time: ${examsInSession.first['time']}',
                           style: normalStyle,
                         ),
+                        pw.SizedBox(height: 4),
+                        pw.Text(
+                          'Exams: ${examsInSession.map((e) => '${e['course_id']} - ${e['course_name'] ?? 'N/A'}').join(', ')}',
+                          style: smallStyle,
+                        ),
                       ],
                     ),
                   ),
@@ -1903,28 +1908,28 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
         }
       }
 
-      // Generate filename
-      final filename =
-          'seating_arrangements_${DateFormat('yyyy_MM_dd').format(DateTime.now())}.pdf';
+      // Save PDF and handle download based on platform
+      final bytes = await pdf.save();
 
-      // Handle download based on platform
       if (kIsWeb) {
-        // For web platform - direct download
-        final bytes = await pdf.save();
+        // Web platform: Use blob and download
         final blob = html.Blob([bytes], 'application/pdf');
         final url = html.Url.createObjectUrlFromBlob(blob);
-        final anchor = html.AnchorElement()
+        final anchor = html.document.createElement('a') as html.AnchorElement
           ..href = url
           ..style.display = 'none'
-          ..download = filename;
-        html.document.body!.children.add(anchor);
+          ..download =
+              'seating_arrangements_${DateFormat('yyyy_MM_dd').format(DateTime.now())}.pdf';
+        html.document.body?.children.add(anchor);
         anchor.click();
+        html.document.body?.children.remove(anchor);
         html.Url.revokeObjectUrl(url);
       } else {
-        // For native platforms - use temporary directory
+        // Mobile/Desktop platforms: Use path_provider
         final output = await getTemporaryDirectory();
-        final file = File('${output.path}/$filename');
-        await file.writeAsBytes(await pdf.save());
+        final file = File(
+            '${output.path}/seating_arrangements_${DateFormat('yyyy_MM_dd').format(DateTime.now())}.pdf');
+        await file.writeAsBytes(bytes);
 
         final uri = Uri.file(file.path);
         if (await canLaunchUrl(uri)) {

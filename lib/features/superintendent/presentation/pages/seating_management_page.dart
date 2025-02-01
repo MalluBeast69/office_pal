@@ -42,6 +42,7 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
   bool _isSeatingGridExpanded = true;
   DateTime? _filterStartDate;
   DateTime? _filterEndDate;
+  String? _selectedExam;
 
   @override
   void initState() {
@@ -771,11 +772,47 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
       orElse: () => {'no_of_columns': 0, 'no_of_rows': 0},
     );
 
+    if (_selectedDate == null || _selectedSession == null) {
+      return const Center(
+        child: Text('Please select a date and session'),
+      );
+    }
+
     final dateStr = _selectedDate!.toString().split(' ')[0];
-    final dateArrangements = arrangements[dateStr]!;
+    final dateArrangements = arrangements[dateStr];
+
+    if (dateArrangements == null) {
+      return const Center(
+        child: Text('No arrangements found for selected date'),
+      );
+    }
+
     final sessionArrangements = dateArrangements
         .where((arr) => arr['exam']['session'] == _selectedSession)
         .toList();
+
+    if (sessionArrangements.isEmpty) {
+      return const Center(
+        child: Text('No arrangements found for selected session'),
+      );
+    }
+
+    // Get unique exams in current seating
+    final exams = sessionArrangements
+        .map((s) => s['exam'])
+        .toSet()
+        .map((exam) => {
+              'course_code': exam['course_id'],
+              'course_name': exam['course_name'] ?? 'N/A',
+            })
+        .toList();
+
+    // Calculate statistics with null safety
+    final totalStudents = sessionArrangements.length;
+    final regularStudents =
+        sessionArrangements.where((s) => s['is_supplementary'] == false).length;
+    final supplementaryStudents =
+        sessionArrangements.where((s) => s['is_supplementary'] == true).length;
 
     return Column(
       children: [
@@ -826,55 +863,146 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
         ),
         // Content
         Expanded(
-          child: Column(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (_isSeatingGridExpanded) ...[
-                Expanded(
-                  flex: 3,
+              // Seating Grid
+              Expanded(
+                flex: 3,
+                child: SingleChildScrollView(
+                  child: _buildSeatingGrid(
+                    selectedHallData['no_of_columns'],
+                    selectedHallData['no_of_rows'],
+                    {dateStr: sessionArrangements},
+                  ),
+                ),
+              ),
+              // Exam Filter Panel
+              SizedBox(
+                width: 250,
+                child: Card(
+                  margin: const EdgeInsets.only(left: 16, right: 16),
                   child: SingleChildScrollView(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
-                      child: _buildSeatingGrid(
-                        selectedHallData['no_of_columns'],
-                        selectedHallData['no_of_rows'],
-                        {dateStr: sessionArrangements},
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Filter by Exam',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 16),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              FilterChip(
+                                selected: _selectedExam == null,
+                                showCheckmark: false,
+                                label: const Text('All Exams'),
+                                onSelected: (_) {
+                                  setState(() => _selectedExam = null);
+                                },
+                              ),
+                              ...exams.map((exam) {
+                                final courseCode =
+                                    exam['course_code'] as String;
+                                final courseName =
+                                    exam['course_name'] as String;
+                                final studentCount = sessionArrangements
+                                    .where((arr) =>
+                                        arr['exam']['course_id'] == courseCode)
+                                    .length;
+
+                                return FilterChip(
+                                  selected: _selectedExam == courseCode,
+                                  showCheckmark: false,
+                                  label: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '$courseCode - $courseName',
+                                        style: TextStyle(
+                                          fontSize: Theme.of(context)
+                                              .textTheme
+                                              .bodyMedium!
+                                              .fontSize,
+                                        ),
+                                      ),
+                                      Text(
+                                        '$studentCount students',
+                                        style: TextStyle(
+                                          fontSize: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall!
+                                              .fontSize,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  onSelected: (_) {
+                                    setState(() => _selectedExam = courseCode);
+                                  },
+                                );
+                              }),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          // Statistics
+                          const Divider(),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Statistics',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 8),
+                          _buildStatisticRow(
+                            'Total Students',
+                            totalStudents.toString(),
+                            Icons.people,
+                          ),
+                          const SizedBox(height: 8),
+                          _buildStatisticRow(
+                            'Regular',
+                            regularStudents.toString(),
+                            Icons.person,
+                          ),
+                          const SizedBox(height: 8),
+                          _buildStatisticRow(
+                            'Supplementary',
+                            supplementaryStudents.toString(),
+                            Icons.person_outline,
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
-                Expanded(
-                  flex: 1,
-                  child:
-                      _buildArrangementDetails({dateStr: sessionArrangements}),
-                ),
-              ] else ...[
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.grid_view,
-                        size: 20,
-                        color: Colors.grey.shade400,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Seating grid is collapsed',
-                        style: TextStyle(
-                          color: Colors.grey.shade600,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child:
-                      _buildArrangementDetails({dateStr: sessionArrangements}),
-                ),
-              ],
+              ),
             ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Add this helper method for statistics in the filter panel
+  Widget _buildStatisticRow(String label, String value, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(width: 8),
+        Text(label),
+        const Spacer(),
+        Text(
+          value,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Theme.of(context).colorScheme.primary,
           ),
         ),
       ],
@@ -987,6 +1115,8 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
     );
     final bool isOccupied = arrangement.isNotEmpty;
     final exam = isOccupied ? arrangement['exam'] : null;
+    final isHighlighted = _selectedExam == null ||
+        (isOccupied && exam['course_id'] == _selectedExam);
 
     // Calculate sequential seat number
     final seatNumber =
@@ -997,83 +1127,86 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
       child: InkWell(
         onTap: isOccupied ? () => _viewSeatingArrangement(arrangement) : null,
         borderRadius: BorderRadius.circular(8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Desk
-            Container(
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.brown.shade400,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(8),
-                  topRight: Radius.circular(8),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 2,
-                    offset: const Offset(0, 1),
+        child: Opacity(
+          opacity: isHighlighted ? 1.0 : 0.3,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Desk
+              Container(
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.brown.shade400,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(8),
+                    topRight: Radius.circular(8),
                   ),
-                ],
-              ),
-              child: Stack(
-                children: [
-                  // Always show seat number
-                  Positioned(
-                    top: 4,
-                    right: 4,
-                    child: Text(
-                      '$seatNumber',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.7),
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 2,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: Stack(
+                  children: [
+                    // Always show seat number
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: Text(
+                        '$seatNumber',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.7),
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                  ),
-                  if (isOccupied)
-                    Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          arrangement['student_reg_no']
-                              .toString()
-                              .substring(0, 4),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
+                    if (isOccupied)
+                      Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            arrangement['student_reg_no']
+                                .toString()
+                                .substring(0, 4),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                ],
-              ),
-            ),
-            // Student icon
-            Container(
-              height: 24,
-              decoration: BoxDecoration(
-                color: isOccupied
-                    ? (exam?['session'] == 'FN' ? Colors.blue : Colors.orange)
-                    : Colors.grey.shade300,
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(8),
-                  bottomRight: Radius.circular(8),
+                  ],
                 ),
               ),
-              child: Icon(
-                isOccupied ? Icons.school : Icons.chair,
-                color: isOccupied ? Colors.white : Colors.grey.shade400,
-                size: 18,
+              // Student icon
+              Container(
+                height: 24,
+                decoration: BoxDecoration(
+                  color: isOccupied
+                      ? (exam['session'] == 'FN' ? Colors.blue : Colors.orange)
+                      : Colors.grey.shade300,
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(8),
+                    bottomRight: Radius.circular(8),
+                  ),
+                ),
+                child: Icon(
+                  isOccupied ? Icons.school : Icons.chair,
+                  color: isOccupied ? Colors.white : Colors.grey.shade400,
+                  size: 18,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1795,11 +1928,6 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                         pw.Text(
                           'Time: ${examsInSession.first['time']}',
                           style: normalStyle,
-                        ),
-                        pw.SizedBox(height: 4),
-                        pw.Text(
-                          'Exams: ${examsInSession.map((e) => '${e['course_id']} - ${e['course_name'] ?? 'N/A'}').join(', ')}',
-                          style: smallStyle,
                         ),
                       ],
                     ),

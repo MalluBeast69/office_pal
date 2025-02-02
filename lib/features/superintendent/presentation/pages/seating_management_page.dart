@@ -43,11 +43,13 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
   DateTime? _filterStartDate;
   DateTime? _filterEndDate;
   String? _selectedExam;
+  bool _isSeatingVisible = false;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _loadSeatingVisibility();
   }
 
   Future<void> _loadData() async {
@@ -1415,6 +1417,17 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
         actions: [
           if (!_isLoading)
             IconButton(
+              icon: Icon(
+                _isSeatingVisible ? Icons.visibility : Icons.visibility_off,
+                color: _isSeatingVisible ? Colors.green : Colors.red,
+              ),
+              tooltip: _isSeatingVisible
+                  ? 'Seating is visible to students'
+                  : 'Seating is hidden from students',
+              onPressed: _toggleSeatingVisibility,
+            ),
+          if (!_isLoading)
+            IconButton(
               icon: const Icon(Icons.picture_as_pdf),
               tooltip: 'Download PDF',
               onPressed: _generateAndDownloadPDF,
@@ -2205,6 +2218,65 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
         return 'Evening';
       default:
         return session; // Return original value if unknown
+    }
+  }
+
+  Future<void> _loadSeatingVisibility() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('seating_visibility')
+          .select()
+          .single();
+      if (mounted) {
+        setState(() {
+          _isSeatingVisible = response['is_visible'] ?? false;
+        });
+      }
+    } catch (error) {
+      // If no record exists, create one
+      await Supabase.instance.client.from('seating_visibility').upsert({
+        'id': 1,
+        'is_visible': false,
+      });
+    }
+  }
+
+  Future<void> _toggleSeatingVisibility() async {
+    try {
+      setState(() => _isLoading = true);
+
+      // Toggle the value
+      final newValue = !_isSeatingVisible;
+
+      // Update in Supabase
+      await Supabase.instance.client.from('seating_visibility').upsert({
+        'id': 1,
+        'is_visible': newValue,
+      });
+
+      setState(() {
+        _isSeatingVisible = newValue;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(newValue
+              ? 'Seating arrangements are now visible to students'
+              : 'Seating arrangements are now hidden from students'),
+          backgroundColor: newValue ? Colors.green : Colors.orange,
+        ),
+      );
+    } catch (error) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error updating seating visibility: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 }

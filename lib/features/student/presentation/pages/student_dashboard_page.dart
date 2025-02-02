@@ -34,6 +34,7 @@ class _StudentDashboardPageState extends ConsumerState<StudentDashboardPage> {
   final bool _isLoading = false;
   Map<String, dynamic>? _selectedExam;
   String? _studentRegNo;
+  bool _isSeatingVisible = false;
   final TextEditingController _searchController = TextEditingController();
 
   @override
@@ -41,6 +42,7 @@ class _StudentDashboardPageState extends ConsumerState<StudentDashboardPage> {
     super.initState();
     _loadData();
     _loadStudentInfo();
+    _loadSeatingVisibility();
   }
 
   @override
@@ -112,6 +114,27 @@ class _StudentDashboardPageState extends ConsumerState<StudentDashboardPage> {
     }
   }
 
+  Future<void> _loadSeatingVisibility() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('seating_visibility')
+          .select()
+          .single();
+      if (mounted) {
+        setState(() {
+          _isSeatingVisible = response['is_visible'] ?? false;
+        });
+      }
+    } catch (error) {
+      developer.log('Error loading seating visibility: $error');
+      if (mounted) {
+        setState(() {
+          _isSeatingVisible = false;
+        });
+      }
+    }
+  }
+
   void _signOut() {
     showDialog(
       context: context,
@@ -159,7 +182,22 @@ class _StudentDashboardPageState extends ConsumerState<StudentDashboardPage> {
                 ).animate().fadeIn(),
               )
             : RefreshIndicator(
-                onRefresh: _loadData,
+                onRefresh: () async {
+                  await _loadData();
+                  await _loadSeatingVisibility();
+                  await _loadStudentInfo();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Exam details updated'),
+                      duration: Duration(seconds: 1),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+                color: Theme.of(context).primaryColor,
+                backgroundColor: Colors.white,
+                strokeWidth: 3,
+                displacement: 40,
                 child: CustomScrollView(
                   controller: _scrollController,
                   slivers: [
@@ -390,6 +428,7 @@ class _StudentDashboardPageState extends ConsumerState<StudentDashboardPage> {
                                 duration: exam['duration'],
                                 examData: arrangement,
                                 onViewSeating: _showSeatingArrangement,
+                                showSeatingDetails: _isSeatingVisible || isPast,
                               ).animate().fadeIn().slideY(
                                     begin: 0.2,
                                     delay: Duration(milliseconds: index * 100),
@@ -397,6 +436,45 @@ class _StudentDashboardPageState extends ConsumerState<StudentDashboardPage> {
                             );
                           },
                           childCount: examSeatingArrangements.length,
+                        ),
+                      ),
+                    if (!_isSeatingVisible)
+                      SliverToBoxAdapter(
+                        child: Container(
+                          margin: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.blue.shade200),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.info_outline,
+                                      color: Colors.blue.shade700),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Seating Information',
+                                    style: TextStyle(
+                                      color: Colors.blue.shade900,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Seating arrangements will be made visible by the examination department closer to the exam dates. Please check back later.',
+                                style: TextStyle(
+                                  color: Colors.blue.shade900,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                   ],
@@ -411,6 +489,7 @@ class _StudentDashboardPageState extends ConsumerState<StudentDashboardPage> {
     final bool isToday = examDate.year == DateTime.now().year &&
         examDate.month == DateTime.now().month &&
         examDate.day == DateTime.now().day;
+    final bool isPast = examDate.isBefore(DateTime.now());
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -448,11 +527,12 @@ class _StudentDashboardPageState extends ConsumerState<StudentDashboardPage> {
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.remove_red_eye_outlined),
-                  onPressed: () => _showSeatingArrangement(exam),
-                  tooltip: 'View Seating Arrangement',
-                ),
+                if (_isSeatingVisible || isPast)
+                  IconButton(
+                    icon: const Icon(Icons.remove_red_eye_outlined),
+                    onPressed: () => _showSeatingArrangement(exam),
+                    tooltip: 'View Seating Arrangement',
+                  ),
               ],
             ),
           ),
@@ -481,6 +561,28 @@ class _StudentDashboardPageState extends ConsumerState<StudentDashboardPage> {
               ],
             ),
           ),
+          if (!_isSeatingVisible && !isPast)
+            Container(
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.orange.shade800),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Seating details will be revealed closer to the exam date',
+                      style: TextStyle(color: Colors.orange.shade900),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -871,6 +973,7 @@ class ExamCard extends StatelessWidget {
   final int? duration;
   final Map<String, dynamic> examData;
   final Function(Map<String, dynamic>) onViewSeating;
+  final bool showSeatingDetails;
 
   const ExamCard({
     super.key,
@@ -886,6 +989,7 @@ class ExamCard extends StatelessWidget {
     required this.onViewSeating,
     this.time,
     this.duration,
+    this.showSeatingDetails = true,
   });
 
   @override
@@ -925,6 +1029,7 @@ class ExamCard extends StatelessWidget {
               seatNo: seatNo,
               time: time,
               duration: duration,
+              showSeatingDetails: showSeatingDetails,
             ),
           );
         },
@@ -957,36 +1062,15 @@ class ExamCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.remove_red_eye_outlined),
-                    onPressed: () => onViewSeating(examData),
-                    tooltip: 'View Seating Arrangement',
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
+                  if (showSeatingDetails)
+                    IconButton(
+                      icon: const Icon(Icons.remove_red_eye_outlined),
+                      onPressed: () => onViewSeating(examData),
+                      tooltip: 'View Seating Arrangement',
                     ),
-                    decoration: BoxDecoration(
-                      color: isPast
-                          ? Colors.grey[200]
-                          : Theme.of(context).primaryColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      session,
-                      style: TextStyle(
-                        color: isPast
-                            ? Colors.grey[600]
-                            : Theme.of(context).primaryColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Icon(
@@ -1021,23 +1105,28 @@ class ExamCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(
-                    Icons.room,
-                    size: 16,
-                    color: isPast ? Colors.grey : Colors.black87,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${room['room_name']} - $seatNo',
-                    style: TextStyle(
-                      fontSize: 14,
+              if (showSeatingDetails)
+                Row(
+                  children: [
+                    Icon(
+                      Icons.room,
+                      size: 16,
                       color: isPast ? Colors.grey : Colors.black87,
                     ),
-                  ),
-                  if (duration != null) ...[
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${room['room_name']} - $seatNo',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isPast ? Colors.grey : Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+              if (duration != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
                     Icon(
                       Icons.timer_outlined,
                       size: 16,
@@ -1052,8 +1141,8 @@ class ExamCard extends StatelessWidget {
                       ),
                     ),
                   ],
-                ],
-              ),
+                ),
+              ],
               if (isToday)
                 Container(
                   margin: const EdgeInsets.only(top: 12),
@@ -1102,6 +1191,7 @@ class ExamDetailsSheet extends StatelessWidget {
   final String seatNo;
   final String? time;
   final int? duration;
+  final bool showSeatingDetails;
 
   const ExamDetailsSheet({
     super.key,
@@ -1113,6 +1203,7 @@ class ExamDetailsSheet extends StatelessWidget {
     required this.seatNo,
     this.time,
     this.duration,
+    this.showSeatingDetails = true,
   });
 
   @override
@@ -1179,24 +1270,52 @@ class ExamDetailsSheet extends StatelessWidget {
               value: '$duration minutes',
             ),
           ],
-          const SizedBox(height: 12),
-          DetailRow(
-            icon: Icons.location_on,
-            label: 'Hall',
-            value: room['room_name'],
-          ),
-          const SizedBox(height: 12),
-          DetailRow(
-            icon: Icons.business,
-            label: 'Department',
-            value: room['block_name'].toString().replaceAll('Department: ', ''),
-          ),
-          const SizedBox(height: 12),
-          DetailRow(
-            icon: Icons.event_seat,
-            label: 'Seat',
-            value: seatNo,
-          ),
+          if (showSeatingDetails) ...[
+            const SizedBox(height: 12),
+            DetailRow(
+              icon: Icons.location_on,
+              label: 'Hall',
+              value: room['room_name'],
+            ),
+            const SizedBox(height: 12),
+            DetailRow(
+              icon: Icons.business,
+              label: 'Department',
+              value:
+                  room['block_name'].toString().replaceAll('Department: ', ''),
+            ),
+            const SizedBox(height: 12),
+            DetailRow(
+              icon: Icons.event_seat,
+              label: 'Seat',
+              value: seatNo,
+            ),
+          ] else ...[
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.orange.shade800),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Seating details will be revealed closer to the exam date',
+                      style: TextStyle(
+                        color: Colors.orange.shade900,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,

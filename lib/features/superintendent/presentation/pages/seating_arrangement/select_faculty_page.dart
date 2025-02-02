@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'preview_seating_page.dart';
+import 'dart:developer' as developer;
 
 class SelectFacultyPage extends ConsumerStatefulWidget {
   final List<Map<String, dynamic>> exams;
@@ -25,11 +26,15 @@ class _SelectFacultyPageState extends ConsumerState<SelectFacultyPage> {
   bool _isLoading = false;
   String _searchQuery = '';
   late int _requiredFaculty;
+  // Track hall-session combinations
+  Map<String, Set<String>> _hallSessionsMap = {};
+  // Track unique hall-session pairs that need faculty
+  Set<String> _uniqueHallSessionPairs = {};
 
   @override
   void initState() {
     super.initState();
-    _requiredFaculty = widget.selectedHalls.length;
+    _initializeHallSessions();
     _loadFaculty();
   }
 
@@ -92,51 +97,121 @@ class _SelectFacultyPageState extends ConsumerState<SelectFacultyPage> {
     return workload * 2.0 + (weeklyWorkload / 7.0);
   }
 
+  // Initialize hall sessions map and calculate required faculty
+  void _initializeHallSessions() {
+    _hallSessionsMap.clear();
+    _uniqueHallSessionPairs.clear();
+
+    // Group exams by date
+    final examsByDate = <String, List<Map<String, dynamic>>>{};
+    for (final exam in widget.exams) {
+      final date = exam['exam_date'].toString().split(' ')[0];
+      examsByDate[date] ??= [];
+      examsByDate[date]!.add(exam);
+    }
+
+    // For each date, process sessions
+    for (final date in examsByDate.keys) {
+      final dateExams = examsByDate[date]!;
+      final sessions = dateExams.map((e) => e['session'] as String).toSet();
+
+      for (final session in sessions) {
+        // For each hall, check if it's needed for this session
+        for (final hallId in widget.selectedHalls) {
+          // Create a unique identifier for this hall-session combination
+          final hallSessionKey = '$hallId|$session|$date';
+
+          // If this hall is needed for this session
+          if (dateExams.any((exam) => exam['session'] == session)) {
+            _hallSessionsMap[hallId] ??= {};
+            _hallSessionsMap[hallId]!.add(session);
+            _uniqueHallSessionPairs.add(hallSessionKey);
+          }
+        }
+      }
+    }
+
+    // Update required faculty count based on unique hall-session pairs
+    _requiredFaculty = _uniqueHallSessionPairs.length;
+    developer.log('Required faculty count: $_requiredFaculty');
+    developer.log('Hall sessions map: $_hallSessionsMap');
+    developer.log('Unique hall-session pairs: $_uniqueHallSessionPairs');
+  }
+
+  String _getSessionDisplayName(String session) {
+    switch (session) {
+      case 'MORNING':
+        return 'Morning';
+      case 'AFTERNOON':
+        return 'Afternoon';
+      case 'EVENING':
+        return 'Evening';
+      default:
+        return session;
+    }
+  }
+
   void _autoAssignFaculty() {
     final availableFaculty = _filterFaculty();
     if (availableFaculty.isEmpty) return;
 
     _hallFacultyMap.clear();
 
-    // Get unique exam dates from widget.exams
-    final examDates = widget.exams
-        .map((e) => DateTime.parse(e['exam_date']))
-        .toSet()
-        .toList();
+    // Group exams by date
+    final examsByDate = <String, List<Map<String, dynamic>>>{};
+    for (final exam in widget.exams) {
+      final date = exam['exam_date'].toString().split(' ')[0];
+      examsByDate[date] ??= [];
+      examsByDate[date]!.add(exam);
+    }
 
-    // For each exam date
-    for (final date in examDates) {
-      // Get exams for this date
-      final dateExams = widget.exams
-          .where((e) => DateTime.parse(e['exam_date']).isAtSameMomentAs(date))
-          .toList();
+    // For each date
+    for (final date in examsByDate.keys) {
+      final dateExams = examsByDate[date]!;
+      final sessions = dateExams.map((e) => e['session'] as String).toSet();
 
-      // For each session in this date
-      final sessions = dateExams.map((e) => e['session']).toSet();
+      // For each session
       for (final session in sessions) {
-        // Get halls that need faculty for this session
+        // Get halls needed for this session
         final sessionHalls = widget.selectedHalls.where((hallId) {
-          return dateExams.any((exam) => exam['session'] == session);
+          return _hallSessionsMap[hallId]?.contains(session) ?? false;
         }).toList();
 
-        // Sort faculty by their availability score for this date
+        // Sort faculty by availability
         final sortedFaculty = List<Map<String, dynamic>>.from(availableFaculty)
           ..sort((a, b) {
-            final scoreA = _getFacultyScore(a, date);
-            final scoreB = _getFacultyScore(b, date);
+            final scoreA = _getFacultyScore(a, DateTime.parse(date));
+            final scoreB = _getFacultyScore(b, DateTime.parse(date));
             return scoreA.compareTo(scoreB);
           });
 
         // Assign faculty to halls
         for (final hallId in sessionHalls) {
-          // Find the best available faculty
+          final hallSessionKey = '$hallId|$session|$date';
+
+          // Find available faculty for this hall-session
           final availableFacultyForHall = sortedFaculty.where((f) {
-            // Check if faculty is not already assigned to another hall in this session
-            return !_hallFacultyMap.values.contains(f['faculty_id']);
+            final facultyId = f['faculty_id'];
+
+            // Check if this faculty is already assigned to another hall in the same session and date
+            for (final existingKey in _hallFacultyMap.keys) {
+              if (_hallFacultyMap[existingKey] == facultyId) {
+                final parts = existingKey.split('|');
+                if (parts.length >= 3) {
+                  final existingSession = parts[1];
+                  final existingDate = parts[2];
+                  // Can't assign if already assigned to same session on same date
+                  if (existingSession == session && existingDate == date) {
+                    return false;
+                  }
+                }
+              }
+            }
+            return true;
           }).toList();
 
           if (availableFacultyForHall.isNotEmpty) {
-            _hallFacultyMap[hallId] =
+            _hallFacultyMap[hallSessionKey] =
                 availableFacultyForHall.first['faculty_id'];
           }
         }
@@ -161,6 +236,26 @@ class _SelectFacultyPageState extends ConsumerState<SelectFacultyPage> {
   @override
   Widget build(BuildContext context) {
     final filteredFaculty = _filterFaculty();
+
+    // Group halls by date and session
+    final hallsByDateAndSession = <String, Map<String, List<String>>>{};
+
+    for (final hallId in widget.selectedHalls) {
+      final sessions = _hallSessionsMap[hallId] ?? {};
+
+      for (final exam in widget.exams) {
+        final date = exam['exam_date'].toString().split(' ')[0];
+        final session = exam['session'] as String;
+
+        if (sessions.contains(session)) {
+          hallsByDateAndSession[date] ??= {};
+          hallsByDateAndSession[date]![session] ??= [];
+          if (!hallsByDateAndSession[date]![session]!.contains(hallId)) {
+            hallsByDateAndSession[date]![session]!.add(hallId);
+          }
+        }
+      }
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -217,7 +312,7 @@ class _SelectFacultyPageState extends ConsumerState<SelectFacultyPage> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'Assigned: ${_hallFacultyMap.length} / $_requiredFaculty halls',
+                        'Assigned: ${_hallFacultyMap.length} / $_requiredFaculty faculty needed',
                         style: TextStyle(
                           color: _hallFacultyMap.length >= _requiredFaculty
                               ? Colors.green
@@ -239,85 +334,208 @@ class _SelectFacultyPageState extends ConsumerState<SelectFacultyPage> {
               children: [
                 Expanded(
                   child: ListView.builder(
-                    itemCount: widget.selectedHalls.length,
+                    itemCount: hallsByDateAndSession.length,
                     padding: const EdgeInsets.all(16),
-                    itemBuilder: (context, index) {
-                      final hallId = widget.selectedHalls[index];
-                      final assignedFacultyId = _hallFacultyMap[hallId];
-                      final assignedFaculty = assignedFacultyId != null
-                          ? _faculty.firstWhere(
-                              (f) => f['faculty_id'] == assignedFacultyId)
-                          : null;
+                    itemBuilder: (context, dateIndex) {
+                      final date =
+                          hallsByDateAndSession.keys.elementAt(dateIndex);
+                      final sessionsMap = hallsByDateAndSession[date]!;
 
-                      return Card(
-                        child: ListTile(
-                          title: Text('Hall: $hallId'),
-                          subtitle: assignedFaculty != null
-                              ? Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                        'Faculty: ${assignedFaculty['faculty_name']}'),
-                                    Text(
-                                        'Department: ${assignedFaculty['dept_id']}'),
-                                  ],
-                                )
-                              : const Text('No faculty assigned'),
-                          trailing: PopupMenuButton<String>(
-                            icon: const Icon(Icons.more_vert),
-                            onSelected: (facultyId) {
-                              setState(() {
-                                if (assignedFacultyId != null) {
-                                  _hallFacultyMap.remove(hallId);
-                                }
-                                if (facultyId.isNotEmpty) {
-                                  _hallFacultyMap[hallId] = facultyId;
-                                }
-                              });
-                            },
-                            itemBuilder: (context) => [
-                              if (assignedFacultyId != null)
-                                const PopupMenuItem(
-                                  value: '',
-                                  child: Text('Remove Assignment'),
-                                ),
-                              ...filteredFaculty
-                                  .where((f) => !_hallFacultyMap.values
-                                      .contains(f['faculty_id']))
-                                  .map(
-                                    (faculty) => PopupMenuItem(
-                                      value: faculty['faculty_id'],
-                                      child: Text(
-                                          '${faculty['faculty_name']} (${faculty['dept_id']})'),
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.only(bottom: 16),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .secondaryContainer,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'Date: $date',
+                              style: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSecondaryContainer,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                          ...sessionsMap.entries.map((sessionEntry) {
+                            final session = sessionEntry.key;
+                            final halls = sessionEntry.value;
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(12),
+                                  margin:
+                                      const EdgeInsets.symmetric(vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .primaryContainer,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    _getSessionDisplayName(session),
+                                    style: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onPrimaryContainer,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
                                     ),
                                   ),
-                            ],
-                          ),
-                        ),
+                                ),
+                                ...halls.map((hallId) {
+                                  final hallSessionKey =
+                                      '$hallId|$session|$date';
+                                  final assignedFacultyId =
+                                      _hallFacultyMap[hallSessionKey];
+                                  final assignedFaculty = assignedFacultyId !=
+                                          null
+                                      ? _faculty.firstWhere((f) =>
+                                          f['faculty_id'] == assignedFacultyId)
+                                      : null;
+
+                                  return Card(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    child: ListTile(
+                                      title: Text(hallId),
+                                      subtitle: Text(assignedFaculty != null
+                                          ? '${assignedFaculty['faculty_name']} (${assignedFaculty['faculty_id']})'
+                                          : 'No faculty assigned'),
+                                      trailing: PopupMenuButton<String>(
+                                        onSelected: (facultyId) {
+                                          setState(() {
+                                            if (facultyId.isNotEmpty) {
+                                              _hallFacultyMap[hallSessionKey] =
+                                                  facultyId;
+                                            } else {
+                                              _hallFacultyMap
+                                                  .remove(hallSessionKey);
+                                            }
+                                          });
+                                        },
+                                        itemBuilder: (context) => [
+                                          if (assignedFacultyId != null)
+                                            const PopupMenuItem(
+                                              value: '',
+                                              child: Text('Remove Assignment'),
+                                            ),
+                                          ...filteredFaculty.where((f) {
+                                            final facultyId = f['faculty_id'];
+
+                                            // Check if faculty is already assigned to another hall in this session and date
+                                            for (final existingKey
+                                                in _hallFacultyMap.keys) {
+                                              if (_hallFacultyMap[
+                                                      existingKey] ==
+                                                  facultyId) {
+                                                final parts =
+                                                    existingKey.split('|');
+                                                if (parts.length >= 3) {
+                                                  final existingSession =
+                                                      parts[1];
+                                                  final existingDate = parts[2];
+                                                  if (existingSession ==
+                                                          session &&
+                                                      existingDate == date) {
+                                                    return false;
+                                                  }
+                                                }
+                                              }
+                                            }
+                                            return true;
+                                          }).map(
+                                            (faculty) => PopupMenuItem(
+                                              value: faculty['faculty_id'],
+                                              child: Text(
+                                                  '${faculty['faculty_name']} (${faculty['faculty_id']})'),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                                const SizedBox(height: 16),
+                              ],
+                            );
+                          }).toList(),
+                          const Divider(height: 32),
+                        ],
                       );
                     },
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: FilledButton.icon(
-                    icon: const Icon(Icons.arrow_forward),
-                    label: const Text('Preview Seating'),
-                    onPressed: _hallFacultyMap.length != _requiredFaculty
-                        ? null
-                        : () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => PreviewSeatingPage(
-                                  exams: widget.exams,
-                                  selectedStudents: widget.selectedStudents,
-                                  selectedHalls: widget.selectedHalls,
-                                  hallFacultyMap: _hallFacultyMap,
-                                ),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, -2),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Faculty Assignments',
+                                style: Theme.of(context).textTheme.titleMedium,
                               ),
-                            );
-                          },
+                              Text(
+                                '${_hallFacultyMap.length} of $_requiredFaculty assignments completed',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                        FilledButton.icon(
+                          icon: const Icon(Icons.arrow_forward),
+                          label: const Text('Next'),
+                          onPressed: _hallFacultyMap.length >= _requiredFaculty
+                              ? () {
+                                  // Convert hall-session-date keys back to hall-faculty mapping
+                                  final simplifiedMap = <String, String>{};
+                                  for (final entry in _hallFacultyMap.entries) {
+                                    final hallId = entry.key.split('|')[0];
+                                    simplifiedMap[hallId] = entry.value;
+                                  }
+
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => PreviewSeatingPage(
+                                        exams: widget.exams,
+                                        selectedStudents:
+                                            widget.selectedStudents,
+                                        selectedHalls: widget.selectedHalls,
+                                        hallFacultyMap: simplifiedMap,
+                                      ),
+                                    ),
+                                  );
+                                }
+                              : null,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],

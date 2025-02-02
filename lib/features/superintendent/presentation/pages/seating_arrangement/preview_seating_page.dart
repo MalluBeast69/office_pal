@@ -162,7 +162,7 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
 
     _seatingArrangements = {};
 
-    // Sort halls by capacity
+    // Sort halls by capacity (largest first)
     final sortedHalls = List<Map<String, dynamic>>.from(_halls)
       ..sort((a, b) => (b['capacity'] as int).compareTo(a['capacity'] as int));
 
@@ -172,152 +172,99 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
 
       for (final session in examsByDateAndSession[date]!.keys) {
         _seatingArrangements[date]![session] = {};
-        final examsInSession = examsByDateAndSession[date]![session]!;
 
-        // Track assigned students to prevent duplicates
-        final assignedStudents = <String>{};
-
-        // Group students by exam and sort by supplementary status
-        final studentsByExam = <String, List<Map<String, dynamic>>>{};
-        for (final exam in examsInSession) {
-          final courseId = exam['course_id'] as String;
-          final attendingStudents = _students
-              .where((s) =>
-                  s['course_code'] == courseId &&
-                  widget.selectedStudents.contains(s['student_reg_no']) &&
-                  !assignedStudents.contains(s['student_reg_no']))
-              .toList()
-            ..sort((a, b) {
-              // Sort by supplementary status first, then by registration number
-              if (a['is_supplementary'] != b['is_supplementary']) {
-                return a['is_supplementary'] ? 1 : -1;
-              }
-              return a['student_reg_no'].compareTo(b['student_reg_no']);
-            });
-
-          if (attendingStudents.isNotEmpty) {
-            studentsByExam[courseId] = attendingStudents;
-          }
-        }
-
-        if (studentsByExam.isEmpty) continue;
-
-        // Calculate total students
-        final totalStudents = studentsByExam.values
-            .map((students) => students.length)
-            .reduce((a, b) => a + b);
-
-        // Select halls based on total students needed
-        final neededHalls = <Map<String, dynamic>>[];
-        var remainingStudents = totalStudents;
-
-        for (final hall in sortedHalls) {
-          if (remainingStudents <= 0) break;
-          neededHalls.add(hall);
-          remainingStudents -= hall['capacity'] as int;
-        }
-
-        if (neededHalls.isEmpty) continue;
-
-        // Initialize seating arrangements for each hall
-        for (final hall in neededHalls) {
+        // Initialize both halls
+        for (final hall in sortedHalls.take(2)) {
           _seatingArrangements[date]![session]![hall['hall_id']] = [];
         }
 
-        // Sort exams by number of students (largest first)
-        final sortedExams = studentsByExam.entries.toList()
-          ..sort((a, b) => b.value.length.compareTo(a.value.length));
+        final examsInSession = examsByDateAndSession[date]![session]!;
 
-        // Assign students to halls using optimized pattern
+        // First, get all unique students for this session
+        final uniqueStudents = <String, Map<String, dynamic>>{};
+        for (final exam in examsInSession) {
+          final courseId = exam['course_id'] as String;
+          developer.log('Processing students for exam $courseId');
+
+          final examStudents =
+              _students.where((s) => s['course_code'] == courseId);
+          for (final student in examStudents) {
+            uniqueStudents[student['student_reg_no']] = student;
+          }
+        }
+
+        developer
+            .log('Total unique students in session: ${uniqueStudents.length}');
+
+        // Group students by exam
+        final studentsByExam = <String, List<Map<String, dynamic>>>{};
+        final assignedStudents = <String>{};
+
+        for (final exam in examsInSession) {
+          final courseId = exam['course_id'] as String;
+          final examStudents = uniqueStudents.values
+              .where((s) =>
+                  s['course_code'] == courseId &&
+                  !assignedStudents.contains(s['student_reg_no']))
+              .toList();
+
+          if (examStudents.isNotEmpty) {
+            studentsByExam[courseId] = examStudents;
+            developer.log(
+                'Added ${examStudents.length} students for exam $courseId');
+          }
+        }
+
+        final totalStudents = uniqueStudents.length;
+        developer.log('Total unique students to seat: $totalStudents');
+
+        // Calculate target per hall for even distribution
+        final targetPerHall = (totalStudents / 2).ceil();
+        developer.log('Target students per hall: $targetPerHall');
+
+        // Alternate between halls for even distribution
         var currentHallIndex = 0;
-        var isForward = true;
+        final hallIds = sortedHalls.take(2).map((h) => h['hall_id']).toList();
 
-        for (final examEntry in sortedExams) {
+        // Process each exam's students
+        for (final examEntry in studentsByExam.entries) {
           final courseId = examEntry.key;
           final students = examEntry.value;
+          developer
+              .log('Processing ${students.length} students for exam $courseId');
 
           for (final student in students) {
-            if (currentHallIndex >= neededHalls.length) {
-              currentHallIndex = neededHalls.length - 1;
-              isForward = false;
-            } else if (currentHallIndex < 0) {
-              currentHallIndex = 0;
-              isForward = true;
-            }
+            var studentAssigned = false;
 
-            final hall = neededHalls[currentHallIndex];
-            final hallId = hall['hall_id'];
-            final rows = hall['no_of_rows'] as int;
-            final cols = hall['no_of_columns'] as int;
+            // Try both halls in alternating order
+            for (var attempt = 0; attempt < 2 && !studentAssigned; attempt++) {
+              final hallId = hallIds[currentHallIndex];
+              final hall =
+                  sortedHalls.firstWhere((h) => h['hall_id'] == hallId);
 
-            // Initialize grid
-            final grid = List.generate(
-                rows, (_) => List<String?>.filled(cols, null, growable: false),
-                growable: false);
+              final rows = hall['no_of_rows'] as int;
+              final cols = hall['no_of_columns'] as int;
 
-            // Fill in existing students
-            for (final existingStudent
-                in _seatingArrangements[date]![session]![hallId]!) {
-              final row = existingStudent['row_no'] as int;
-              final col = existingStudent['column_no'] as int;
-              grid[row][col] = existingStudent['student_reg_no'] as String;
-            }
+              // Initialize grid with existing students
+              final grid = List.generate(
+                rows,
+                (_) => List<String?>.filled(cols, null, growable: false),
+                growable: false,
+              );
 
-            // Find next available seat using compact pattern
-            bool seatFound = false;
-
-            // Try to fill seats in a compact manner
-            for (int row = 0; row < rows && !seatFound; row++) {
-              // Use alternating pattern for better distribution
-              final colRange = row % 2 == 0
-                  ? List.generate(cols, (i) => i)
-                  : List.generate(cols, (i) => cols - 1 - i);
-
-              for (final col in colRange) {
-                // Skip if this would create too much empty space
-                if (row > 0) {
-                  int emptySeatsInPreviousRows = 0;
-                  for (int r = 0; r < row; r++) {
-                    if (grid[r][col] == null) emptySeatsInPreviousRows++;
-                  }
-                  // Only allow one empty seat gap
-                  if (emptySeatsInPreviousRows > 1) continue;
-                }
-
-                // Check for empty seats in the current row
-                int emptySeatsInCurrentRow = 0;
-                for (int c = 0; c < col; c++) {
-                  if (grid[row][c] == null) emptySeatsInCurrentRow++;
-                }
-                // Only allow one empty seat gap in the current row
-                if (emptySeatsInCurrentRow > 1) continue;
-
-                if (grid[row][col] == null &&
-                    _isSeatSuitable(grid, row, col, courseId, studentsByExam)) {
-                  grid[row][col] = student['student_reg_no'];
-                  _seatingArrangements[date]![session]![hallId]!.add({
-                    'student_reg_no': student['student_reg_no'],
-                    'column_no': col,
-                    'row_no': row,
-                    'is_supplementary': student['is_supplementary'],
-                    'student': student['student'],
-                    'course_code': student['course_code'],
-                  });
-                  seatFound = true;
-                  assignedStudents.add(student['student_reg_no']);
-                  break;
-                }
+              // Fill in existing students
+              for (final existingStudent
+                  in _seatingArrangements[date]![session]![hallId]!) {
+                final row = existingStudent['row_no'] as int;
+                final col = existingStudent['column_no'] as int;
+                grid[row][col] = existingStudent['course_code'] as String;
               }
-            }
 
-            // If no suitable seat found in compact pattern, try alternative positions
-            if (!seatFound) {
-              for (int row = 0; row < rows && !seatFound; row++) {
-                for (int col = 0; col < cols; col++) {
+              // Try to find a suitable seat
+              for (var row = 0; row < rows && !studentAssigned; row++) {
+                for (var col = 0; col < cols && !studentAssigned; col++) {
                   if (grid[row][col] == null &&
-                      _isSeatSuitable(
-                          grid, row, col, courseId, studentsByExam)) {
-                    grid[row][col] = student['student_reg_no'];
+                      _isSeatSuitable(grid, row, col, courseId)) {
                     _seatingArrangements[date]![session]![hallId]!.add({
                       'student_reg_no': student['student_reg_no'],
                       'column_no': col,
@@ -326,103 +273,77 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                       'student': student['student'],
                       'course_code': student['course_code'],
                     });
-                    seatFound = true;
+                    studentAssigned = true;
                     assignedStudents.add(student['student_reg_no']);
-                    break;
+                    developer.log(
+                        'Assigned student ${student['student_reg_no']} to hall $hallId at row $row, col $col');
                   }
                 }
               }
+
+              // Try next hall if current one didn't work
+              currentHallIndex = (currentHallIndex + 1) % 2;
             }
 
-            // Move to next hall using snake pattern
-            if (isForward) {
-              currentHallIndex++;
-            } else {
-              currentHallIndex--;
+            if (!studentAssigned) {
+              developer.log(
+                  'Could not assign student ${student['student_reg_no']} for exam $courseId');
             }
           }
         }
 
-        // Remove any halls that ended up with no students
-        _seatingArrangements[date]![session]!
-            .removeWhere((_, students) => students.isEmpty);
+        // Log detailed results
+        final totalSeated = assignedStudents.length;
+        final unassignedStudents = uniqueStudents.values
+            .where((s) => !assignedStudents.contains(s['student_reg_no']))
+            .map((s) => '${s['student_reg_no']} (${s['course_code']})')
+            .toList();
+
+        developer
+            .log('Total students seated: $totalSeated out of $totalStudents');
+        if (totalSeated < totalStudents) {
+          developer.log(
+              'WARNING: Not all students could be seated. Missing ${totalStudents - totalSeated} students');
+          developer
+              .log('Unassigned students: ${unassignedStudents.join(', ')}');
+        }
+
+        // Log hall distribution
+        for (final hallId in hallIds) {
+          final studentsInHall =
+              _seatingArrangements[date]![session]![hallId]!.length;
+          developer.log('Hall $hallId has $studentsInHall students');
+        }
       }
     }
   }
 
-  bool _isSeatSuitable(List<List<String?>> grid, int row, int col,
-      String courseId, Map<String, List<Map<String, dynamic>>> studentsByExam) {
+  bool _isSeatSuitable(
+      List<List<String?>> grid, int row, int col, String courseId) {
     final rows = grid.length;
     final cols = grid[0].length;
 
-    // Define positions to check (only immediate adjacent and diagonal)
-    final positions = {
-      'adjacent': [
-        [-1, 0], // Above
-        [1, 0], // Below
-        [0, -1], // Left
-        [0, 1], // Right
-      ],
-      'diagonal': [
-        [-1, -1], // Top-left
-        [-1, 1], // Top-right
-        [1, -1], // Bottom-left
-        [1, 1], // Bottom-right
-      ],
-    };
+    // Only check immediate adjacent and diagonal positions
+    final positions = [
+      [-1, -1], // Top-left
+      [-1, 0], // Top
+      [-1, 1], // Top-right
+      [0, -1], // Left
+      [0, 1], // Right
+      [1, -1], // Bottom-left
+      [1, 0], // Bottom
+      [1, 1], // Bottom-right
+    ];
 
-    // Check each position
-    for (final entry in positions.entries) {
-      for (final pos in entry.value) {
-        final newRow = row + pos[0];
-        final newCol = col + pos[1];
+    // Check each adjacent position
+    for (final pos in positions) {
+      final newRow = row + pos[0];
+      final newCol = col + pos[1];
 
-        if (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols) {
-          final otherStudentId = grid[newRow][newCol];
-          if (otherStudentId != null) {
-            // Check if student is from same course
-            for (final examEntry in studentsByExam.entries) {
-              if (examEntry.key == courseId &&
-                  examEntry.value
-                      .any((s) => s['student_reg_no'] == otherStudentId)) {
-                return false; // Don't allow same course students in adjacent or diagonal positions
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // Check for same exam students in the row and column
-    int sameExamInRow = 0;
-    int sameExamInCol = 0;
-
-    // Check row
-    for (int c = 0; c < cols; c++) {
-      if (c != col && grid[row][c] != null) {
-        final studentId = grid[row][c];
-        for (final entry in studentsByExam.entries) {
-          if (entry.key == courseId &&
-              entry.value.any((s) => s['student_reg_no'] == studentId)) {
-            sameExamInRow++;
-            if (sameExamInRow > 0)
-              return false; // Only allow one student from same exam in row
-          }
-        }
-      }
-    }
-
-    // Check column
-    for (int r = 0; r < rows; r++) {
-      if (r != row && grid[r][col] != null) {
-        final studentId = grid[r][col];
-        for (final entry in studentsByExam.entries) {
-          if (entry.key == courseId &&
-              entry.value.any((s) => s['student_reg_no'] == studentId)) {
-            sameExamInCol++;
-            if (sameExamInCol > 0)
-              return false; // Only allow one student from same exam in column
-          }
+      if (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols) {
+        final adjacentCourse = grid[newRow][newCol];
+        if (adjacentCourse == courseId) {
+          return false; // Don't allow same course in adjacent positions
         }
       }
     }

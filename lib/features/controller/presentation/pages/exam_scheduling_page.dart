@@ -55,13 +55,36 @@ class _ExamSchedulingPageState extends ConsumerState<ExamSchedulingPage> {
           .order('course_code');
 
       if (mounted) {
-        final courses =
-            (response as List).map((json) => Course.fromJson(json)).toList();
+        final courses = (response as List).map((json) {
+          // Add null checks and default values
+          return Course(
+            courseCode: json['course_code'] as String? ?? '',
+            courseName: json['course_name'] as String? ?? '',
+            deptId: json['dept_id'] as String? ?? '',
+            credit: int.tryParse(json['credit']?.toString() ?? '0') ?? 0,
+            courseType: json['course_type'] as String? ?? '',
+            semester: int.tryParse(json['semester']?.toString() ?? '0') ?? 0,
+            examDuration:
+                int.tryParse(json['exam_duration']?.toString() ?? '180') ?? 180,
+            createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
+                DateTime.now(),
+            updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? '') ??
+                DateTime.now(),
+          );
+        }).toList();
+
         setState(() {
           _allCourses = courses;
-          _courseTypes = courses.map((c) => c.courseType).toSet();
-          _semesters = courses.map((c) => c.semester).toSet();
-          _departments = courses.map((c) => c.deptId).toSet();
+          _courseTypes = courses
+              .map((c) => c.courseType)
+              .where((type) => type.isNotEmpty)
+              .toSet();
+          _semesters =
+              courses.map((c) => c.semester).where((sem) => sem > 0).toSet();
+          _departments = courses
+              .map((c) => c.deptId)
+              .where((dept) => dept.isNotEmpty)
+              .toSet();
           _isLoading = false;
         });
       }
@@ -234,7 +257,8 @@ class _ExamSchedulingPageState extends ConsumerState<ExamSchedulingPage> {
                                   minimumSize:
                                       WidgetStateProperty.all(Size.zero),
                                   padding: WidgetStateProperty.all(
-                                      const EdgeInsets.symmetric(horizontal: 16)),
+                                      const EdgeInsets.symmetric(
+                                          horizontal: 16)),
                                 ),
                                 selected: {externalType},
                                 onSelectionChanged:

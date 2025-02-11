@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:math' show max;
+import 'dart:math' as math;
 import 'select_faculty_page.dart';
 import 'dart:developer' as developer;
 
@@ -29,6 +29,7 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
   String? _selectedDepartment;
   List<String> _departments = [];
   String? _selectedSession;
+  List<Map<String, dynamic>> _students = [];
 
   @override
   void initState() {
@@ -45,12 +46,16 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
           await Supabase.instance.client.from('registered_students').select('''
             student_reg_no,
             course_code,
-            is_reguler
+            is_reguler,
+            student!inner (
+              student_name,
+              dept_id,
+              semester
+            )
           ''').in_('student_reg_no', widget.selectedStudents);
 
-      final registeredStudents =
-          List<Map<String, dynamic>>.from(registeredStudentsResponse);
-      developer.log('Loaded ${registeredStudents.length} registered students');
+      _students = List<Map<String, dynamic>>.from(registeredStudentsResponse);
+      developer.log('Loaded ${_students.length} registered students');
 
       // Group students by date and session, tracking unique students
       final studentsByDateAndSession =
@@ -72,7 +77,7 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
 
         // Find students registered for this course
         final examStudents =
-            registeredStudents.where((s) => s['course_code'] == courseId);
+            _students.where((s) => s['course_code'] == courseId);
 
         var regularCount = 0;
         var supplementaryCount = 0;
@@ -251,14 +256,17 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
   }
 
   void _selectHall(String hallId, bool selected) {
-    if (_selectedSession == null) return;
+    final currentSession = _selectedSession;
+    if (currentSession == null) return;
 
-    final hall = _halls.firstWhere((h) => h['hall_id'] == hallId);
     setState(() {
+      // Initialize the set if it doesn't exist
+      _selectedHallsBySession[currentSession] ??= <String>{};
+
       if (selected) {
-        _selectedHallsBySession[_selectedSession]?.add(hallId);
+        _selectedHallsBySession[currentSession]!.add(hallId);
       } else {
-        _selectedHallsBySession[_selectedSession]?.remove(hallId);
+        _selectedHallsBySession[currentSession]!.remove(hallId);
       }
     });
   }
@@ -334,308 +342,144 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
   }
 
   // Generate positions in a spiral pattern from center
-  List<List<int>> _generateSpiralPositions(int rows, int cols) {
+  List<List<int>> _generateSpiralPositions(
+      int rows, int cols, int startRow, int startCol) {
     final positions = <List<int>>[];
-    final centerRow = rows ~/ 2;
-    final centerCol = cols ~/ 2;
+    final maxDistance = math.max(
+      math.max(startRow, rows - 1 - startRow),
+      math.max(startCol, cols - 1 - startCol),
+    );
 
-    // Try different starting points to maximize spacing
-    final startPoints = [
-      [centerRow, centerCol], // Center
-      [0, 0], // Top-left
-      [0, cols - 1], // Top-right
-      [rows - 1, 0], // Bottom-left
-      [rows - 1, cols - 1], // Bottom-right
-    ];
-
-    for (final start in startPoints) {
-      final pattern = _generatePatternFromStart(start[0], start[1], rows, cols);
-      positions.addAll(pattern);
-    }
-
-    // Remove duplicates while preserving order
-    final seen = <String>{};
-    return positions.where((pos) {
-      final key = '${pos[0]},${pos[1]}';
-      if (seen.contains(key)) return false;
-      seen.add(key);
-      return true;
-    }).toList();
-  }
-
-  List<List<int>> _generatePatternFromStart(
-      int startRow, int startCol, int rows, int cols) {
-    final positions = <List<int>>[];
-    final visited = List.generate(rows, (_) => List.filled(cols, false));
-
-    // Directions: right, down, left, up
-    final directions = [
-      [0, 1],
-      [1, 0],
-      [0, -1],
-      [-1, 0],
-    ];
-
-    var currentRow = startRow;
-    var currentCol = startCol;
-    var dirIndex = 0;
-
-    while (positions.length < rows * cols) {
-      if (_isValidPosition(currentRow, currentCol, rows, cols) &&
-          !visited[currentRow][currentCol]) {
-        positions.add([currentRow, currentCol]);
-        visited[currentRow][currentCol] = true;
-      }
-
-      // Try to move in current direction
-      var nextRow = currentRow + directions[dirIndex][0];
-      var nextCol = currentCol + directions[dirIndex][1];
-
-      // Change direction if we can't move further
-      if (!_isValidPosition(nextRow, nextCol, rows, cols) ||
-          visited[nextRow][nextCol]) {
-        dirIndex = (dirIndex + 1) % 4;
-        nextRow = currentRow + directions[dirIndex][0];
-        nextCol = currentCol + directions[dirIndex][1];
-
-        // If we can't move in any direction, break
-        if (!_isValidPosition(nextRow, nextCol, rows, cols) ||
-            visited[nextRow][nextCol]) {
-          break;
+    for (var distance = 0; distance <= maxDistance; distance++) {
+      // Add positions in a square pattern around the center
+      for (var i = -distance; i <= distance; i++) {
+        for (var j = -distance; j <= distance; j++) {
+          // Only add positions that form the current square's perimeter
+          if (i.abs() == distance || j.abs() == distance) {
+            final row = startRow + i;
+            final col = startCol + j;
+            if (row >= 0 && row < rows && col >= 0 && col < cols) {
+              positions.add([row, col]);
+            }
+          }
         }
       }
-
-      currentRow = nextRow;
-      currentCol = nextCol;
     }
 
     return positions;
   }
 
-  bool _isValidPosition(int row, int col, int rows, int cols) {
-    return row >= 0 && row < rows && col >= 0 && col < cols;
-  }
-
-  // Try to seat students from each exam with multiple patterns
-  bool _trySeatingInHall(
-    Map<String, List<List<List<String?>>>> seatingGrid,
-    String hallId,
-    String courseId,
-    int targetCount,
-    int rows,
-    int cols,
-    int seatedForExam,
-    int totalSeated,
-    int totalStudents,
-  ) {
-    final patterns = [
-      _generateSpiralPositions(rows, cols),
-      _generatePatternFromStart(0, 0, rows, cols),
-      _generatePatternFromStart(rows - 1, cols - 1, rows, cols),
-    ];
-
-    for (final positions in patterns) {
-      var success = true;
-      final tempGrid = List.generate(
-        rows,
-        (r) => List.generate(
-          cols,
-          (c) => List<String?>.from(seatingGrid[hallId]![r][c]),
-          growable: false,
-        ),
-        growable: false,
-      );
-
-      var tempSeated = seatedForExam;
-      var tempTotal = totalSeated;
-
-      for (final pos in positions) {
-        if (tempSeated >= targetCount || tempTotal >= totalStudents) break;
-
-        final row = pos[0];
-        final col = pos[1];
-
-        if (tempGrid[row][col][0] == null &&
-            _isSeatSuitable(
-                tempGrid.map((r) => r.map((c) => c[0]).toList()).toList(),
-                row,
-                col,
-                courseId)) {
-          tempGrid[row][col][0] = courseId;
-          tempSeated++;
-          tempTotal++;
-        }
-      }
-
-      if (tempSeated == targetCount || tempTotal == totalStudents) {
-        // Copy successful arrangement back to main grid
-        for (var r = 0; r < rows; r++) {
-          for (var c = 0; c < cols; c++) {
-            seatingGrid[hallId]![r][c][0] = tempGrid[r][c][0];
-          }
-        }
-        return true;
-      }
-    }
-
-    return false;
-  }
-
   Map<String, dynamic> simulateSeatingArrangement(
-      List<Map<String, dynamic>> halls,
-      int totalStudents,
-      List<Map<String, dynamic>> exams) {
-    final seatingGrid = <String, List<List<List<String?>>>>{};
+    List<Map<String, dynamic>> halls,
+    List<Map<String, dynamic>> students,
+    List<Map<String, dynamic>> exams,
+  ) {
+    final seatingGrid = <String, List<Map<String, dynamic>>>{};
     var totalSeated = 0;
+    final assignedStudents = <String>{};
 
     // Initialize grids for each hall
     for (final hall in halls) {
-      final rows = hall['no_of_rows'] as int;
-      final cols = hall['no_of_columns'] as int;
       final hallId = hall['hall_id'].toString();
-
-      seatingGrid[hallId] = List.generate(
-        rows,
-        (_) => List.generate(
-          cols,
-          (_) => List<String?>.filled(1, null, growable: false),
-          growable: false,
-        ),
-        growable: false,
-      );
+      seatingGrid[hallId] = [];
     }
 
-    // Calculate student count per exam
-    final examStudentCounts = <String, int>{};
-    var totalExamStudents = 0;
-
-    // First pass: collect all students for each course
+    // Group students by exam
+    final studentsByExam = <String, List<Map<String, dynamic>>>{};
     for (final exam in exams) {
       final courseId = exam['course_id'] as String;
-      final registeredStudents = widget.selectedStudents.where((studentId) {
-        return widget.exams.any((e) =>
-            e['course_id'] == courseId && e['session'] == exam['session']);
-      }).length;
-
-      examStudentCounts[courseId] = registeredStudents;
-      totalExamStudents += registeredStudents;
+      studentsByExam[courseId] = students
+          .where((s) =>
+              s['course_code'] == courseId &&
+              !assignedStudents.contains(s['student_reg_no']))
+          .toList();
     }
 
-    // Sort exams by size (largest first) to optimize seating
-    final sortedExams = List<Map<String, dynamic>>.from(exams)
+    // Sort exams by number of students (largest first)
+    final sortedExams = exams.toList()
       ..sort((a, b) {
-        final aCount = examStudentCounts[a['course_id']] ?? 0;
-        final bCount = examStudentCounts[b['course_id']] ?? 0;
+        final aCount = studentsByExam[a['course_id']]?.length ?? 0;
+        final bCount = studentsByExam[b['course_id']]?.length ?? 0;
         return bCount.compareTo(aCount);
       });
 
-    // Try to seat students from each exam
+    // Process each exam
     for (final exam in sortedExams) {
       final courseId = exam['course_id'] as String;
-      final targetCount = examStudentCounts[courseId] ?? 0;
-      var seatedForExam = 0;
+      final examStudents = studentsByExam[courseId] ?? [];
 
-      // Calculate maximum students that can be seated in each hall for this course
-      final hallCapacities = <String, int>{};
+      if (examStudents.isEmpty) continue;
+
+      // Try to assign students to halls
       for (final hall in halls) {
         final hallId = hall['hall_id'].toString();
         final rows = hall['no_of_rows'] as int;
         final cols = hall['no_of_columns'] as int;
-        var availableSeats = 0;
 
-        // Count available seats considering spacing requirements
-        for (var r = 0; r < rows; r++) {
-          for (var c = 0; c < cols; c++) {
-            if (seatingGrid[hallId]![r][c][0] == null &&
-                _isSeatSuitable(
-                    seatingGrid[hallId]!
-                        .map((r) => r.map((c) => c[0]).toList())
-                        .toList(),
-                    r,
-                    c,
-                    courseId)) {
-              availableSeats++;
+        // Create a grid to track occupied seats
+        final grid = List.generate(
+          rows,
+          (_) => List<String?>.filled(cols, null, growable: false),
+          growable: false,
+        );
+
+        // Fill in existing assignments
+        for (final assignment in seatingGrid[hallId]!) {
+          grid[assignment['row_no']][assignment['column_no']] =
+              assignment['course_code'];
+        }
+
+        // Try to seat remaining students
+        for (final student in examStudents.where(
+          (s) => !assignedStudents.contains(s['student_reg_no']),
+        )) {
+          var seated = false;
+
+          // Try to find a suitable seat using spiral pattern
+          final centerRow = rows ~/ 2;
+          final centerCol = cols ~/ 2;
+          final positions =
+              _generateSpiralPositions(rows, cols, centerRow, centerCol);
+
+          for (final pos in positions) {
+            final row = pos[0];
+            final col = pos[1];
+
+            if (grid[row][col] == null &&
+                _isSeatSuitable(grid, row, col, courseId)) {
+              seatingGrid[hallId]!.add({
+                'student_reg_no': student['student_reg_no'],
+                'column_no': col,
+                'row_no': row,
+                'course_code': courseId,
+                'student': student['student'],
+                'is_supplementary': student['is_reguler'] != true,
+              });
+              grid[row][col] = courseId;
+              assignedStudents.add(student['student_reg_no']);
+              totalSeated++;
+              seated = true;
+              break;
             }
           }
-        }
-        hallCapacities[hallId] = availableSeats;
-      }
 
-      // Sort halls by available capacity (largest first)
-      final sortedHalls = List<Map<String, dynamic>>.from(halls)
-        ..sort((a, b) {
-          final aCapacity = hallCapacities[a['hall_id'].toString()] ?? 0;
-          final bCapacity = hallCapacities[b['hall_id'].toString()] ?? 0;
-          return bCapacity.compareTo(aCapacity);
-        });
-
-      // Try to seat students in each hall
-      for (final hall in sortedHalls) {
-        if (seatedForExam >= targetCount || totalSeated >= totalStudents) break;
-
-        final hallId = hall['hall_id'].toString();
-        final rows = hall['no_of_rows'] as int;
-        final cols = hall['no_of_columns'] as int;
-
-        // Calculate remaining students for this exam
-        final remainingForExam = targetCount - seatedForExam;
-        final availableInHall = hallCapacities[hallId] ?? 0;
-
-        // Try to seat as many students as possible in this hall
-        final studentsToTry = remainingForExam < availableInHall
-            ? remainingForExam
-            : availableInHall;
-
-        if (studentsToTry > 0) {
-          final success = _trySeatingInHall(
-            seatingGrid,
-            hallId,
-            courseId,
-            studentsToTry,
-            rows,
-            cols,
-            seatedForExam,
-            totalSeated,
-            totalStudents,
-          );
-
-          if (success) {
-            // Count how many were actually seated
-            var newSeated = 0;
-            for (var r = 0; r < rows; r++) {
-              for (var c = 0; c < cols; c++) {
-                if (seatingGrid[hallId]![r][c][0] == courseId) {
-                  newSeated++;
-                }
-              }
-            }
-            seatedForExam += newSeated;
-            totalSeated += newSeated;
-
-            developer.log(
-                'Seated $newSeated students from course $courseId in hall $hallId');
-          }
+          if (!seated) break; // If we can't seat a student, move to next hall
         }
       }
-
-      developer.log(
-          'Seated $seatedForExam/$targetCount students for course $courseId');
     }
 
     final totalEffectiveCapacity = halls.fold<int>(
-        0, (sum, hall) => sum + calculateEffectiveHallCapacity(hall));
-    final success = totalSeated == totalStudents;
-    final efficiency = totalSeated / totalEffectiveCapacity;
+      0,
+      (sum, hall) => sum + calculateEffectiveHallCapacity(hall),
+    );
 
-    developer.log('Total students seated: $totalSeated/$totalStudents');
-    developer.log('Total effective capacity: $totalEffectiveCapacity');
-    developer.log(
-        'Success: $success, Efficiency: ${(efficiency * 100).toStringAsFixed(1)}%');
+    final success = totalSeated == students.length;
+    final efficiency = totalSeated / totalEffectiveCapacity;
 
     return {
       'success': success,
       'seated_count': totalSeated,
-      'total_students': totalStudents,
+      'total_students': students.length,
       'seating_grid': seatingGrid,
       'efficiency': efficiency,
     };
@@ -663,158 +507,64 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
       final totalStudents = _getCapacityNeededForSession(session);
       developer.log('Total students to seat: $totalStudents');
 
-      // Sort halls by capacity (smallest first)
-      availableHalls.sort(
-          (a, b) => (a['capacity'] as int).compareTo(b['capacity'] as int));
+      // Initialize selection set for this session
+      newSelections[session] = {};
 
-      // Initialize session set
-      newSelections[session] = <String>{};
+      // Get all exams for this session
+      final examsInSession = widget.exams
+          .where((exam) =>
+              exam['session'] == session &&
+              exam['exam_date'].toString().split(' ')[0] ==
+                  _capacityNeededPerDateAndSession.keys.first)
+          .toList();
 
-      // Try each hall individually first
-      var bestSolution = <Map<String, dynamic>>[];
-      var bestResult = <String, dynamic>{
-        'success': false,
-        'seated_count': 0,
-        'efficiency': 0.0,
-      };
+      // Get all students for this session
+      final studentsInSession = <Map<String, dynamic>>[];
+      for (final studentRegNo in widget.selectedStudents) {
+        final registeredStudent = _students.firstWhere(
+          (s) => s['student_reg_no'] == studentRegNo,
+          orElse: () => <String, dynamic>{},
+        );
 
-      developer.log('Trying individual halls first (smallest to largest)...');
+        if (registeredStudent.isNotEmpty) {
+          final courseId = registeredStudent['course_code'] as String;
+          if (examsInSession.any((exam) => exam['course_id'] == courseId)) {
+            studentsInSession.add(registeredStudent);
+          }
+        }
+      }
+
+      // Sort halls by capacity (largest first)
+      availableHalls.sort((a, b) => calculateEffectiveHallCapacity(b)
+          .compareTo(calculateEffectiveHallCapacity(a)));
+
+      var remainingStudents = totalStudents;
+      var selectedHalls = <Map<String, dynamic>>[];
+
+      // Select halls until we have enough capacity
       for (final hall in availableHalls) {
+        if (remainingStudents <= 0) break;
+
         final effectiveCapacity = calculateEffectiveHallCapacity(hall);
-        developer.log(
-            'Trying hall ${hall['hall_id']} (raw capacity: ${hall['capacity']}, effective: $effectiveCapacity)');
-
-        if (effectiveCapacity >= totalStudents) {
-          final simulationResult = simulateSeatingArrangement(
-            [hall],
-            totalStudents,
-            widget.exams.where((e) => e['session'] == session).toList(),
-          );
-
-          final efficiency = simulationResult['seated_count'] / effectiveCapacity;
-          developer.log(
-              'Hall ${hall['hall_id']} result - Seated: ${simulationResult['seated_count']}/$totalStudents (Efficiency: ${(efficiency * 100).toStringAsFixed(1)}%)');
-
-          if (simulationResult['seated_count'] == totalStudents &&
-              (!bestResult['success'] ||
-                  efficiency > (bestResult['efficiency'] as double))) {
-            bestSolution = [hall];
-            bestResult = {
-              ...simulationResult,
-              'efficiency': efficiency,
-              'success': true,
-            };
-            developer.log(
-                'Found better single hall solution with efficiency: ${(efficiency * 100).toStringAsFixed(1)}%');
-          }
+        if (effectiveCapacity > 0) {
+          selectedHalls.add(hall);
+          remainingStudents -= effectiveCapacity;
+          newSelections[session]!.add(hall['hall_id'].toString());
         }
       }
 
-      // If no single hall works well enough, try combinations
-      if (!bestResult['success'] ||
-          (bestResult['efficiency'] as double) < 0.7) {
-        developer.log(
-            'No single hall suitable or efficiency too low, trying combinations...');
-
-        // Try all possible combinations of 2 halls
-        for (var i = 0; i < availableHalls.length - 1; i++) {
-          for (var j = i + 1; j < availableHalls.length; j++) {
-            final combination = [availableHalls[i], availableHalls[j]];
-            final totalEffectiveCapacity = combination.fold<int>(
-                0, (sum, hall) => sum + calculateEffectiveHallCapacity(hall));
-
-            developer.log(
-                'Trying combination: ${combination.map((h) => h['hall_id']).join(", ")} (effective capacity: $totalEffectiveCapacity)');
-
-            if (totalEffectiveCapacity >= totalStudents) {
-              final simulationResult = simulateSeatingArrangement(
-                combination,
-                totalStudents,
-                widget.exams.where((e) => e['session'] == session).toList(),
-              );
-
-              final efficiency =
-                  simulationResult['seated_count'] / totalEffectiveCapacity;
-              developer.log(
-                  'Combination result - Seated: ${simulationResult['seated_count']}/$totalStudents (Efficiency: ${(efficiency * 100).toStringAsFixed(1)}%)');
-
-              if (simulationResult['seated_count'] == totalStudents &&
-                  (!bestResult['success'] ||
-                      efficiency > (bestResult['efficiency'] as double))) {
-                bestSolution = List<Map<String, dynamic>>.from(combination);
-                bestResult = {
-                  ...simulationResult,
-                  'efficiency': efficiency,
-                  'success': true,
-                };
-                developer.log(
-                    'Found better combination solution with efficiency: ${(efficiency * 100).toStringAsFixed(1)}%');
-              }
-            }
-          }
-        }
-
-        // If still no solution, try combinations of 3 halls
-        if (!bestResult['success']) {
-          developer.log('Trying combinations of 3 halls...');
-          for (var i = 0; i < availableHalls.length - 2; i++) {
-            for (var j = i + 1; j < availableHalls.length - 1; j++) {
-              for (var k = j + 1; k < availableHalls.length; k++) {
-                final combination = [
-                  availableHalls[i],
-                  availableHalls[j],
-                  availableHalls[k]
-                ];
-                final totalEffectiveCapacity = combination.fold<int>(
-                    0, (sum, hall) => sum + calculateEffectiveHallCapacity(hall));
-
-                if (totalEffectiveCapacity >= totalStudents) {
-                  final simulationResult = simulateSeatingArrangement(
-                    combination,
-                    totalStudents,
-                    widget.exams.where((e) => e['session'] == session).toList(),
-                  );
-
-                  final efficiency =
-                      simulationResult['seated_count'] / totalEffectiveCapacity;
-
-                  if (simulationResult['seated_count'] == totalStudents &&
-                      (!bestResult['success'] ||
-                          efficiency > (bestResult['efficiency'] as double))) {
-                    bestSolution = List<Map<String, dynamic>>.from(combination);
-                    bestResult = {
-                      ...simulationResult,
-                      'efficiency': efficiency,
-                      'success': true,
-                    };
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // Select the best solution found
-      if (bestResult['success']) {
-        for (final hall in bestSolution) {
-          final hallId = hall['hall_id'].toString();
-          developer.log('Selecting hall $hallId for session $session');
-          newSelections[session]!.add(hallId);
-        }
-
-        final totalEffectiveCapacity = bestSolution.fold<int>(
-            0, (sum, hall) => sum + calculateEffectiveHallCapacity(hall));
-        developer.log(
-            'Selected ${bestSolution.length} halls with efficiency: ${(bestResult['efficiency'] as double * 100).toStringAsFixed(1)}%');
-      } else {
-        developer.log('No suitable solution found for session $session');
-      }
+      developer
+          .log('Selected ${selectedHalls.length} halls for session $session');
+      developer.log('Remaining students: $remainingStudents');
     }
 
     // Update the state with new selections
     setState(() {
       _selectedHallsBySession = Map<String, Set<String>>.from(newSelections);
+      // If no session is currently selected, select the first one
+      if (_selectedSession == null && allSessions.isNotEmpty) {
+        _selectedSession = allSessions.first;
+      }
     });
   }
 

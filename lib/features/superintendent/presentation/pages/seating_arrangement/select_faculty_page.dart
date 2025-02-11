@@ -120,55 +120,25 @@ class _SelectFacultyPageState extends ConsumerState<SelectFacultyPage> {
     _uniqueHallSessionPairs.clear();
 
     // First, initialize the hall sessions map
-    for (final hallId in widget.selectedHalls.map((e) => e['hall_id'])) {
+    for (final hall in widget.selectedHalls) {
+      final hallId = hall['hall_id'].toString();
       _hallSessionsMap[hallId] = <String>{};
     }
 
-    // Track which halls are needed for each date and session
-    final selectedHallsByDateAndSession = <String, Map<String, Set<String>>>{};
+    // For each hall, add its session from the selectedHalls data
+    for (final hall in widget.selectedHalls) {
+      final hallId = hall['hall_id'].toString();
+      final session = hall['session'] as String;
+      final date = hall['exam_date'].toString().split(' ')[0];
 
-    // For each exam, track which halls are needed for each date and session
-    for (final exam in widget.exams) {
-      final date = exam['exam_date'].toString().split(' ')[0];
-      final session = exam['session'] as String;
-      final dateKey = '$date|$session';
+      // Add this session to the hall's set of sessions
+      _hallSessionsMap[hallId]!.add(session);
 
-      selectedHallsByDateAndSession[date] ??= {};
-      selectedHallsByDateAndSession[date]![session] ??= <String>{};
+      // Create and add the unique hall-session-date combination
+      final hallSessionKey = '$hallId|$session|$date';
+      _uniqueHallSessionPairs.add(hallSessionKey);
 
-      // Get the halls that were selected for this session
-      if (session == 'MORNING') {
-        // For morning session, use both halls if needed
-        for (final hallId in widget.selectedHalls.map((e) => e['hall_id'])) {
-          selectedHallsByDateAndSession[date]![session]!.add(hallId);
-        }
-      } else if (session == 'AFTERNOON') {
-        // For afternoon session, only use CE501
-        if (widget.selectedHalls.any((e) => e['hall_id'] == 'CE501')) {
-          selectedHallsByDateAndSession[date]![session]!.add('CE501');
-        }
-      }
-    }
-
-    // Now create the hall-session pairs only for sessions where halls are actually needed
-    for (final date in selectedHallsByDateAndSession.keys) {
-      final sessionsForDate = selectedHallsByDateAndSession[date]!;
-
-      for (final session in sessionsForDate.keys) {
-        final hallsForSession = sessionsForDate[session]!;
-
-        // For each hall needed in this session
-        for (final hallId in hallsForSession) {
-          // Add this session to the hall's set of sessions
-          _hallSessionsMap[hallId]!.add(session);
-
-          // Create and add the unique hall-session-date combination
-          final hallSessionKey = '$hallId|$session|$date';
-          _uniqueHallSessionPairs.add(hallSessionKey);
-
-          developer.log('Added hall-session pair: $hallSessionKey');
-        }
-      }
+      developer.log('Added hall-session pair: $hallSessionKey');
     }
 
     // Update required faculty count based on unique hall-session pairs
@@ -203,53 +173,48 @@ class _SelectFacultyPageState extends ConsumerState<SelectFacultyPage> {
 
     _hallFacultyMap.clear();
 
-    // Group exams by date and session
-    final examsByDateAndSession = <String, Map<String, dynamic>>{};
-    for (final exam in widget.exams) {
-      final date = exam['exam_date'].toString().split(' ')[0];
-      final session = exam['session'] as String;
-      examsByDateAndSession['$date|$session'] = exam;
-    }
-
     // Track faculty assignments per date to avoid multiple sessions per day
     final facultyAssignmentsByDate = <String, Map<String, String>>{};
 
+    // Sort faculty by workload (least busy first)
+    final sortedFaculty = List<Map<String, dynamic>>.from(availableFaculty)
+      ..sort((a, b) {
+        final aAssignments = (a['seating_arr'] as List?)?.length ?? 0;
+        final bAssignments = (b['seating_arr'] as List?)?.length ?? 0;
+        return aAssignments.compareTo(bAssignments);
+      });
+
     // Process each unique hall-session pair
     for (final hallSessionKey in _uniqueHallSessionPairs) {
-      final [hallId, session, date] = hallSessionKey.split('|');
+      final parts = hallSessionKey.split('|');
+      final hallId = parts[0];
+      final session = parts[1];
+      final date = parts[2];
 
       // Initialize tracking for this date if needed
       facultyAssignmentsByDate[date] ??= {};
 
-      // Sort faculty by availability score for this session
-      final availableFacultyForSession = availableFaculty.where((faculty) {
+      // Find available faculty for this session
+      final availableFacultyForSession = sortedFaculty.where((faculty) {
         final facultyId = faculty['faculty_id'];
-
-        // Check if faculty is already assigned to this session
-        if (_hallFacultyMap.entries.any((entry) {
-          final [_, existingSession, existingDate] = entry.key.split('|');
-          return entry.value == facultyId &&
-              existingSession == session &&
-              existingDate == date;
-        })) {
-          return false;
-        }
 
         // Check if faculty is already assigned to another session on this date
         if (facultyAssignmentsByDate[date]!.containsValue(facultyId)) {
           return false;
         }
 
-        return true;
-      }).toList()
-        ..sort((a, b) {
-          final scoreA = _getFacultyScore(a, DateTime.parse(date), session);
-          final scoreB = _getFacultyScore(b, DateTime.parse(date), session);
-          return scoreA.compareTo(scoreB);
+        // Check existing assignments for conflicts
+        final assignments = (faculty['seating_arr'] as List?) ?? [];
+        return !assignments.any((assignment) {
+          final assignmentDate =
+              assignment['exam']['exam_date'].toString().split(' ')[0];
+          final assignmentSession = assignment['exam']['session'];
+          return assignmentDate == date && assignmentSession == session;
         });
+      }).toList();
 
-      // Assign the best available faculty
       if (availableFacultyForSession.isNotEmpty) {
+        // Select the faculty with the least workload
         final selectedFaculty = availableFacultyForSession.first;
         _hallFacultyMap[hallSessionKey] = selectedFaculty['faculty_id'];
         facultyAssignmentsByDate[date]![hallSessionKey] =

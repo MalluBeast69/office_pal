@@ -1,0 +1,5 @@
+stash@{0}: WIP on main: e225602 fixing seating algorithm
+
+ .cursorrules                                                                |  16 [32m+++[m
+ .../presentation/pages/seating_arrangement/select_halls_page.dart           | 266 [32m++++++++++++++++++[m[31m------------------[m
+ 2 files changed, 149 insertions(+), 133 deletions(-)

@@ -45,6 +45,7 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
   String _searchQuery = '';
   ExamSortOption _sortOption = ExamSortOption.date;
   bool _sortAscending = true;
+  Set<String> selectedExams = {};
 
   final List<String> examTypes = [
     'common1',
@@ -911,10 +912,59 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
       appBar: AppBar(
         title: const Text('Exam Management'),
         actions: [
+          // Add select all checkbox
+          examsAsync.when(
+            data: (exams) {
+              final filteredExams = _filterAndSortExams(exams);
+              final allCurrentlyShownSelected = filteredExams
+                  .every((exam) => selectedExams.contains(exam['exam_id']));
+              final hasFilteredExams = filteredExams.isNotEmpty;
+
+              return hasFilteredExams
+                  ? Row(
+                      children: [
+                        Text(
+                          'Select All',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        Checkbox(
+                          value: allCurrentlyShownSelected,
+                          tristate: true,
+                          onChanged: (bool? value) {
+                            setState(() {
+                              if (value ?? false) {
+                                // Select all filtered exams
+                                selectedExams.addAll(
+                                  filteredExams
+                                      .map((e) => e['exam_id'].toString()),
+                                );
+                              } else {
+                                // Deselect all filtered exams
+                                selectedExams.removeAll(
+                                  filteredExams
+                                      .map((e) => e['exam_id'].toString()),
+                                );
+                              }
+                            });
+                          },
+                        ),
+                      ],
+                    )
+                  : const SizedBox.shrink();
+            },
+            loading: () => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
+          if (selectedExams.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.delete),
+              onPressed: _deleteSelectedExams,
+              tooltip: 'Delete Selected Exams',
+            ),
           IconButton(
             icon: const Icon(Icons.add),
-            tooltip: 'Add Exam',
             onPressed: _showManualGenerationDialog,
+            tooltip: 'Add Exam',
           ),
           IconButton(
             icon: const Icon(Icons.upload_file),
@@ -1055,10 +1105,23 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
                 itemBuilder: (context, index) {
                   final exam = Exam.fromJson(filteredExams[index]);
                   final course = courseMap[exam.courseId];
+                  final isSelected = selectedExams.contains(exam.examId);
 
                   return Card(
                     margin: const EdgeInsets.symmetric(vertical: 8),
                     child: ListTile(
+                      leading: Checkbox(
+                        value: isSelected,
+                        onChanged: (bool? value) {
+                          setState(() {
+                            if (value == true) {
+                              selectedExams.add(exam.examId);
+                            } else {
+                              selectedExams.remove(exam.examId);
+                            }
+                          });
+                        },
+                      ),
                       title: Row(
                         children: [
                           Expanded(
@@ -1101,5 +1164,71 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _deleteSelectedExams() async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Selected Exams'),
+        content: Text(
+            'Are you sure you want to delete ${selectedExams.length} selected exams?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => isLoading = true);
+
+    try {
+      // Delete exams from Supabase
+      await Supabase.instance.client
+          .from('exam')
+          .delete()
+          .in_('exam_id', selectedExams.toList());
+
+      // Clear selection and reload exams
+      setState(() {
+        selectedExams.clear();
+      });
+      await _loadExams();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Selected exams deleted successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (error) {
+      developer.log('Error deleting exams: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error deleting exams: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
+    }
   }
 }

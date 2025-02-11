@@ -357,7 +357,7 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
 
           for (final student in students) {
             if (assignedStudents.contains(student['student_reg_no'])) {
-              continue; // Skip already assigned students
+              continue;
             }
 
             var studentAssigned = false;
@@ -385,41 +385,40 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                 grid[row][col] = existingStudent['course_code'] as String;
               }
 
-              // Try to find a suitable seat using a spiral pattern from center
-              final centerRow = rows ~/ 2;
-              final centerCol = cols ~/ 2;
-              final spiralPositions =
-                  _generateSpiralPositions(rows, cols, centerRow, centerCol);
+              // Try to find a suitable seat using sequential pattern
+              final positions = _generateSpiralPositions(rows, cols);
 
-              for (final position in spiralPositions) {
-                final row = position[0];
-                final col = position[1];
+              // Find next available position
+              final nextPos = _findNextAvailablePosition(
+                grid,
+                student['course_code'] as String,
+                positions,
+              );
 
-                if (grid[row][col] == null &&
-                    _isSeatSuitable(grid, row, col, courseId)) {
-                  _seatingArrangements[date]![session]![hallId]!.add({
-                    'student_reg_no': student['student_reg_no'],
-                    'column_no': col,
-                    'row_no': row,
-                    'is_supplementary': student['is_supplementary'],
-                    'student': student['student'],
-                    'course_code': student['course_code'],
-                  });
-                  grid[row][col] = courseId;
-                  studentAssigned = true;
-                  assignedStudents.add(student['student_reg_no']);
-                  developer.log(
-                      'Assigned student ${student['student_reg_no']} to hall $hallId at row $row, col $col');
-                  break;
-                }
+              if (nextPos != null) {
+                final row = nextPos[0];
+                final col = nextPos[1];
+
+                _seatingArrangements[date]![session]![hallId]!.add({
+                  'student_reg_no': student['student_reg_no'],
+                  'column_no': col,
+                  'row_no': row,
+                  'is_supplementary': student['is_supplementary'],
+                  'student': student['student'],
+                  'course_code': student['course_code'],
+                });
+
+                grid[row][col] = student['course_code'] as String;
+                studentAssigned = true;
+                assignedStudents.add(student['student_reg_no']);
+                developer.log(
+                    'Assigned student ${student['student_reg_no']} to hall $hallId at row ${row + 1}, col ${col + 1}');
               }
-
-              // If student wasn't assigned, the hall will be removed and we'll try the next one
             }
 
             if (!studentAssigned) {
               developer.log(
-                  'Could not assign student ${student['student_reg_no']} for exam $courseId');
+                  'Could not assign student ${student['student_reg_no']} for exam ${student['course_code']}');
             }
           }
         }
@@ -1721,7 +1720,7 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                         ),
                         pw.SizedBox(height: 8),
                         pw.Text(
-                          'Date: ${DateFormat('MMMM d, y').format(DateTime.parse(date))}',
+                          'Date: ${DateFormat('MMM d, y').format(DateTime.parse(date))}',
                           style: normalStyle,
                         ),
                         pw.Text(
@@ -2163,30 +2162,40 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
   }
 
   // Helper method to generate spiral positions from center
-  List<List<int>> _generateSpiralPositions(
-      int rows, int cols, int startRow, int startCol) {
+  List<List<int>> _generateSpiralPositions(int rows, int cols) {
     final positions = <List<int>>[];
-    final maxDistance = math.max(
-      math.max(startRow, rows - 1 - startRow),
-      math.max(startCol, cols - 1 - startCol),
-    );
 
-    for (var distance = 0; distance <= maxDistance; distance++) {
-      // Add positions in a square pattern around the center
-      for (var i = -distance; i <= distance; i++) {
-        for (var j = -distance; j <= distance; j++) {
-          // Only add positions that form the current square's perimeter
-          if (i.abs() == distance || j.abs() == distance) {
-            final row = startRow + i;
-            final col = startCol + j;
-            if (row >= 0 && row < rows && col >= 0 && col < cols) {
-              positions.add([row, col]);
-            }
-          }
+    // Start from top-left and move row by row
+    for (var row = 0; row < rows; row++) {
+      // For even rows, go left to right
+      if (row % 2 == 0) {
+        for (var col = 0; col < cols; col++) {
+          positions.add([row, col]);
+        }
+      } else {
+        // For odd rows, go right to left
+        for (var col = cols - 1; col >= 0; col--) {
+          positions.add([row, col]);
         }
       }
     }
 
     return positions;
+  }
+
+  // Helper method to get next available position considering spacing rules
+  List<int>? _findNextAvailablePosition(
+    List<List<String?>> grid,
+    String courseId,
+    List<List<int>> preferredPositions,
+  ) {
+    for (final pos in preferredPositions) {
+      final row = pos[0];
+      final col = pos[1];
+      if (grid[row][col] == null && _isSeatSuitable(grid, row, col, courseId)) {
+        return [row, col];
+      }
+    }
+    return null;
   }
 }

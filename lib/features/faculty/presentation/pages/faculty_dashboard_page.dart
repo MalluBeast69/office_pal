@@ -4,6 +4,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'package:office_pal/features/auth/presentation/pages/login_page.dart';
+import 'package:intl/intl.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:table_calendar/table_calendar.dart';
 
 class FacultyDashboardPage extends ConsumerStatefulWidget {
   final String facultyId;
@@ -24,8 +27,13 @@ class FacultyDashboardPage extends ConsumerStatefulWidget {
 
 class _FacultyDashboardPageState extends ConsumerState<FacultyDashboardPage> {
   bool isLoading = false;
-  List<Map<String, dynamic>> assignedCourses = [];
+  List<Map<String, dynamic>> assignedExams = [];
   List<Map<String, dynamic>> leaveRequests = [];
+  final _scrollController = ScrollController();
+  CalendarFormat _calendarFormat = CalendarFormat.month;
+  DateTime _focusedDay = DateTime.now();
+  DateTime? _selectedDay;
+  Map<DateTime, List<Map<String, dynamic>>> _events = {};
 
   @override
   void initState() {
@@ -33,16 +41,31 @@ class _FacultyDashboardPageState extends ConsumerState<FacultyDashboardPage> {
     _loadData();
   }
 
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadData() async {
     setState(() => isLoading = true);
     try {
-      // Load assigned courses
-      final coursesResponse = await Supabase.instance.client
-          .from('course')
-          .select()
-          .eq('dept_id', widget.departmentId);
+      // Load assigned exams from seating_arr table with exam details
+      final examsResponse = await Supabase.instance.client
+          .from('seating_arr')
+          .select('''
+            *,
+            exam!inner(
+              exam_date,
+              session,
+              time
+            ),
+            hall:hall_id(*)
+          ''')
+          .eq('faculty_id', widget.facultyId)
+          .order('created_at', ascending: false);
 
-      // Load leave requests
+      // Load leave requests separately
       final requestsResponse = await Supabase.instance.client
           .from('notifications')
           .select()
@@ -50,11 +73,49 @@ class _FacultyDashboardPageState extends ConsumerState<FacultyDashboardPage> {
           .eq('type', 'leave_request')
           .order('created_at', ascending: false);
 
+      developer.log('Raw response length: ${examsResponse.length}');
+
       if (mounted) {
+        // Create a map to store unique assignments by date and hall
+        final Map<String, Map<String, dynamic>> uniqueExams = {};
+
+        // Sort assignments by date to get the most recent ones first
+        final sortedAssignments = List<Map<String, dynamic>>.from(examsResponse)
+          ..sort((a, b) {
+            final dateA = DateTime.parse(a['exam']['exam_date']);
+            final dateB = DateTime.parse(b['exam']['exam_date']);
+            return dateB.compareTo(dateA);
+          });
+
+        // Keep only the most recent assignment for each hall
+        for (var assignment in sortedAssignments) {
+          if (assignment['exam'] == null ||
+              assignment['hall'] == null ||
+              assignment['exam']['exam_date'] == null ||
+              assignment['hall']['hall_id'] == null) {
+            continue; // Skip invalid assignments
+          }
+
+          final examDate = DateTime.parse(assignment['exam']['exam_date']);
+          final hallId = assignment['hall']['hall_id'];
+          final key = hallId;
+
+          // Only add if we don't have this hall yet or if this is a more recent assignment
+          if (!uniqueExams.containsKey(key) ||
+              DateTime.parse(uniqueExams[key]!['exam']['exam_date'])
+                  .isBefore(examDate)) {
+            uniqueExams[key] = assignment;
+          }
+        }
+
+        final finalList = uniqueExams.values.toList();
+        developer.log('Final unique halls count: ${finalList.length}');
+
         setState(() {
-          assignedCourses = List<Map<String, dynamic>>.from(coursesResponse);
+          assignedExams = finalList;
           leaveRequests = List<Map<String, dynamic>>.from(requestsResponse);
           isLoading = false;
+          _organizeEvents();
         });
       }
     } catch (error) {
@@ -69,6 +130,40 @@ class _FacultyDashboardPageState extends ConsumerState<FacultyDashboardPage> {
         setState(() => isLoading = false);
       }
     }
+  }
+
+  void _organizeEvents() {
+    _events = {};
+    for (var exam in assignedExams) {
+      final examDate = DateTime.parse(exam['exam']['exam_date']);
+      final dateKey = DateTime(examDate.year, examDate.month, examDate.day);
+      if (_events[dateKey] == null) {
+        _events[dateKey] = [];
+      }
+      _events[dateKey]!.add(exam);
+    }
+  }
+
+  List<Map<String, dynamic>> _getEventsForDay(DateTime day) {
+    return _events[DateTime(day.year, day.month, day.day)] ?? [];
+  }
+
+  Map<String, dynamic>? _getNextDuty() {
+    final now = DateTime.now();
+    Map<String, dynamic>? nextDuty;
+    DateTime? nextDutyDate;
+
+    for (var exam in assignedExams) {
+      final examDate = DateTime.parse(exam['exam']['exam_date']);
+      if (examDate.isAfter(now)) {
+        if (nextDutyDate == null || examDate.isBefore(nextDutyDate)) {
+          nextDutyDate = examDate;
+          nextDuty = exam;
+        }
+      }
+    }
+
+    return nextDuty;
   }
 
   Future<void> _requestLeave() async {
@@ -116,8 +211,7 @@ class _FacultyDashboardPageState extends ConsumerState<FacultyDashboardPage> {
           _loadData();
         }
       } catch (error) {
-        developer.log('Error submitting leave request: $error',
-            error: error, stackTrace: StackTrace.current);
+        developer.log('Error submitting leave request: $error');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -131,202 +225,463 @@ class _FacultyDashboardPageState extends ConsumerState<FacultyDashboardPage> {
     }
   }
 
-  void _signOut() async {
-    developer.log('Navigating to login page');
-    if (mounted) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (context) => const LoginPage(),
-        ),
-        (route) => false,
-      );
-    }
+  void _signOut() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sign Out'),
+        content: const Text('Are you sure you want to sign out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (context) => const LoginPage()),
+                (route) => false,
+              );
+            },
+            child: const Text('Sign Out'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final screenSize = MediaQuery.of(context).size;
-    final isSmallScreen = screenSize.width < 600;
-
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Welcome, ${widget.facultyName}',
-          style: TextStyle(
-            fontSize: isSmallScreen ? 18 : 20,
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: _signOut,
-          ),
-        ],
-      ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadData,
-              child: SingleChildScrollView(
-                padding: EdgeInsets.all(isSmallScreen ? 8.0 : 16.0),
+      body: SafeArea(
+        child: isLoading
+            ? Center(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Faculty Information Card
-                    Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(isSmallScreen ? 12.0 : 16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Faculty Information',
-                              style: TextStyle(
-                                fontSize: isSmallScreen ? 18 : 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 16,
-                              children: [
-                                Text('ID: ${widget.facultyId}'),
-                                Text('Department: ${widget.departmentId}'),
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Loading your details...',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ).animate().fadeIn(),
+              )
+            : RefreshIndicator(
+                onRefresh: () async {
+                  await _loadData();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Details updated'),
+                      duration: Duration(seconds: 1),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+                color: Theme.of(context).primaryColor,
+                backgroundColor: Colors.white,
+                strokeWidth: 3,
+                displacement: 40,
+                child: CustomScrollView(
+                  controller: _scrollController,
+                  slivers: [
+                    // App Bar
+                    SliverAppBar(
+                      expandedHeight: 200,
+                      floating: true,
+                      pinned: true,
+                      stretch: true,
+                      flexibleSpace: FlexibleSpaceBar(
+                        background: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Theme.of(context).primaryColor,
+                                Theme.of(context).primaryColor.withOpacity(0.8),
                               ],
                             ),
+                          ),
+                          child: SafeArea(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                CircleAvatar(
+                                  radius: 40,
+                                  backgroundColor: Colors.white,
+                                  child: Text(
+                                    widget.facultyName
+                                        .substring(0, 1)
+                                        .toUpperCase(),
+                                    style: const TextStyle(
+                                      fontSize: 32,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ).animate().scale(),
+                                const SizedBox(height: 8),
+                                Text(
+                                  widget.facultyName,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ).animate().fadeIn().slideY(
+                                      begin: 0.3,
+                                      curve: Curves.easeOutQuad,
+                                    ),
+                                Text(
+                                  widget.facultyId,
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.9),
+                                    fontSize: 16,
+                                  ),
+                                ).animate().fadeIn().slideY(
+                                      begin: 0.3,
+                                      curve: Curves.easeOutQuad,
+                                    ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      actions: [
+                        IconButton(
+                          icon: const Icon(Icons.logout, color: Colors.white),
+                          onPressed: _signOut,
+                        ),
+                      ],
+                    ),
+                    // Faculty Info
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          children: [
+                            // Next Duty Card
+                            if (_getNextDuty() != null) ...[
+                              Container(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Theme.of(context).primaryColor,
+                                      Theme.of(context)
+                                          .primaryColor
+                                          .withOpacity(0.8),
+                                    ],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Theme.of(context)
+                                          .primaryColor
+                                          .withOpacity(0.3),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Card(
+                                  elevation: 0,
+                                  color: Colors.transparent,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16.0),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.upcoming,
+                                              color: Colors.white,
+                                              size: 28,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            const Text(
+                                              'Next Duty',
+                                              style: TextStyle(
+                                                fontSize: 22,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const Divider(color: Colors.white24),
+                                        Builder(builder: (context) {
+                                          final nextDuty = _getNextDuty()!;
+                                          final examDate = DateTime.parse(
+                                              nextDuty['exam']['exam_date']);
+                                          return Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  const Icon(
+                                                    Icons.meeting_room,
+                                                    color: Colors.white,
+                                                    size: 20,
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Text(
+                                                    'Hall ${nextDuty['hall']['hall_id']}',
+                                                    style: const TextStyle(
+                                                      fontSize: 20,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                      color: Colors.white,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 8),
+                                              Row(
+                                                children: [
+                                                  const Icon(
+                                                    Icons.calendar_today,
+                                                    color: Colors.white70,
+                                                    size: 16,
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Text(
+                                                    DateFormat('EEEE, MMMM d')
+                                                        .format(examDate),
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 16,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Row(
+                                                children: [
+                                                  const Icon(
+                                                    Icons.access_time,
+                                                    color: Colors.white70,
+                                                    size: 16,
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Text(
+                                                    '${nextDuty['exam']['time']} (${nextDuty['exam']['session']})',
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 16,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          );
+                                        }),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ).animate().fadeIn().slideY().then().shimmer(
+                                    duration: const Duration(seconds: 2),
+                                    color: Colors.white24,
+                                  ),
+                              const SizedBox(height: 16),
+                            ],
+                            // Calendar Card
+                            Card(
+                              elevation: 2,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.calendar_month,
+                                          color: Theme.of(context).primaryColor,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        const Text(
+                                          'Duty Calendar',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const Divider(),
+                                    TableCalendar(
+                                      firstDay: DateTime.now()
+                                          .subtract(const Duration(days: 365)),
+                                      lastDay: DateTime.now()
+                                          .add(const Duration(days: 365)),
+                                      focusedDay: _focusedDay,
+                                      calendarFormat: _calendarFormat,
+                                      selectedDayPredicate: (day) =>
+                                          isSameDay(_selectedDay, day),
+                                      eventLoader: _getEventsForDay,
+                                      onDaySelected: (selectedDay, focusedDay) {
+                                        setState(() {
+                                          _selectedDay = selectedDay;
+                                          _focusedDay = focusedDay;
+                                        });
+                                      },
+                                      onFormatChanged: (format) {
+                                        setState(() {
+                                          _calendarFormat = format;
+                                        });
+                                      },
+                                      onPageChanged: (focusedDay) {
+                                        _focusedDay = focusedDay;
+                                      },
+                                      calendarStyle: CalendarStyle(
+                                        markersMaxCount: 1,
+                                        markerSize: 8,
+                                        markerDecoration: BoxDecoration(
+                                          color: Theme.of(context).primaryColor,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: Colors.white,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        selectedDecoration: BoxDecoration(
+                                          color: Theme.of(context)
+                                              .primaryColor
+                                              .withOpacity(0.8),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        todayDecoration: BoxDecoration(
+                                          color: Theme.of(context)
+                                              .primaryColor
+                                              .withOpacity(0.4),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        markerMargin:
+                                            const EdgeInsets.only(top: 4),
+                                      ),
+                                    ),
+                                    if (_selectedDay != null &&
+                                        _getEventsForDay(_selectedDay!)
+                                            .isNotEmpty)
+                                      Padding(
+                                        padding:
+                                            const EdgeInsets.only(top: 8.0),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children:
+                                              _getEventsForDay(_selectedDay!)
+                                                  .map((event) => ListTile(
+                                                        leading: const Icon(
+                                                            Icons.meeting_room),
+                                                        title: Text(
+                                                            'Hall: ${event['hall']['hall_id']}'),
+                                                        subtitle: Text(
+                                                            '${event['exam']['time']} (${event['exam']['session']})'),
+                                                      ))
+                                                  .toList(),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ).animate().fadeIn().slideY(),
                           ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    // Courses Header
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Assigned Courses',
-                              style: TextStyle(
-                                fontSize: isSmallScreen ? 18 : 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                    // Leave Request Button
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                        child: FilledButton.icon(
+                          onPressed: _requestLeave,
+                          icon: const Icon(Icons.calendar_today),
+                          label: const Text('Request Leave'),
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 12, horizontal: 24),
                           ),
-                          SizedBox(width: isSmallScreen ? 8 : 16),
-                          FilledButton.icon(
-                            onPressed: _requestLeave,
-                            icon: const Icon(Icons.calendar_today),
-                            label: Text(
-                              'Request Leave',
-                              style: TextStyle(
-                                fontSize: isSmallScreen ? 13 : 14,
-                              ),
-                            ),
-                          ),
-                        ],
+                        ).animate().fadeIn().slideX(),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    // Courses List
-                    if (assignedCourses.isEmpty)
-                      const Card(
-                        child: Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: Text('No courses assigned yet'),
-                        ),
-                      )
-                    else
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          return Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: assignedCourses.map((course) {
-                              return SizedBox(
-                                width: constraints.maxWidth > 600
-                                    ? (constraints.maxWidth / 2) - 12
-                                    : constraints.maxWidth,
-                                child: Card(
-                                  child: ListTile(
-                                    title: Text(
-                                      course['course_name'],
-                                      style: TextStyle(
-                                        fontSize: isSmallScreen ? 15 : 16,
-                                      ),
-                                    ),
-                                    subtitle: Text(
-                                      'Code: ${course['course_code']}\n'
-                                      'Credits: ${course['credit']}',
-                                      style: TextStyle(
-                                        fontSize: isSmallScreen ? 13 : 14,
-                                      ),
-                                    ),
-                                    isThreeLine: true,
+                    // Leave Requests
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.history,
+                                  color: Theme.of(context).primaryColor,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Leave History',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                              );
-                            }).toList(),
-                          );
-                        },
-                      ),
-                    const SizedBox(height: 24),
-                    // Leave Requests Header
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Text(
-                        'Leave Requests',
-                        style: TextStyle(
-                          fontSize: isSmallScreen ? 18 : 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    // Leave Requests List
-                    if (leaveRequests.isEmpty)
-                      const Card(
-                        child: Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: Text('No leave requests'),
-                        ),
-                      )
-                    else
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          return Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: leaveRequests.map((request) {
-                              final metadata = jsonDecode(request['metadata']);
-                              return SizedBox(
-                                width: constraints.maxWidth > 600
-                                    ? (constraints.maxWidth / 2) - 12
-                                    : constraints.maxWidth,
-                                child: Card(
+                              ],
+                            ).animate().fadeIn(),
+                            const SizedBox(height: 16),
+                            if (leaveRequests.isEmpty)
+                              Card(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.info_outline,
+                                          color: Colors.grey[600]),
+                                      const SizedBox(width: 8),
+                                      const Text('No leave requests yet'),
+                                    ],
+                                  ),
+                                ),
+                              ).animate().fadeIn()
+                            else
+                              ...leaveRequests.map((request) {
+                                if (request['metadata'] == null)
+                                  return const SizedBox.shrink();
+
+                                final metadata =
+                                    jsonDecode(request['metadata'] ?? '{}');
+                                if (metadata == null)
+                                  return const SizedBox.shrink();
+
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 8),
                                   child: ListTile(
-                                    title: Text(
-                                      request['title'],
-                                      style: TextStyle(
-                                        fontSize: isSmallScreen ? 15 : 16,
-                                      ),
-                                    ),
+                                    title: Text(request['title']),
                                     subtitle: Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        Text(
-                                          request['message'],
-                                          style: TextStyle(
-                                            fontSize: isSmallScreen ? 13 : 14,
-                                          ),
-                                        ),
+                                        Text(request['message']),
                                         const SizedBox(height: 4),
                                         Text(
                                           'From: ${metadata['from_date']} To: ${metadata['to_date']}',
-                                          style: TextStyle(
-                                            fontSize: isSmallScreen ? 12 : 13,
-                                          ),
+                                          style: const TextStyle(fontSize: 12),
                                         ),
                                         const SizedBox(height: 4),
                                         Container(
@@ -366,7 +721,7 @@ class _FacultyDashboardPageState extends ConsumerState<FacultyDashboardPage> {
                                                               'approved'
                                                           ? Colors.green
                                                           : Colors.red,
-                                              fontSize: isSmallScreen ? 11 : 12,
+                                              fontSize: 11,
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),
@@ -375,16 +730,243 @@ class _FacultyDashboardPageState extends ConsumerState<FacultyDashboardPage> {
                                     ),
                                     isThreeLine: true,
                                   ),
-                                ),
-                              );
-                            }).toList(),
-                          );
-                        },
+                                ).animate().fadeIn().slideY(
+                                      begin: 0.2,
+                                      delay: Duration(
+                                          milliseconds:
+                                              leaveRequests.indexOf(request) *
+                                                  100),
+                                    );
+                              }).toList(),
+                          ],
+                        ),
                       ),
+                    ),
+                    // Assigned Exams
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.event_seat,
+                                  color: Theme.of(context).primaryColor,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Assigned Halls',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ).animate().fadeIn(),
+                            const SizedBox(height: 16),
+                            if (assignedExams.isEmpty)
+                              Card(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.info_outline,
+                                          color: Colors.grey[600]),
+                                      const SizedBox(width: 8),
+                                      const Text('No halls assigned yet'),
+                                    ],
+                                  ),
+                                ),
+                              ).animate().fadeIn()
+                            else
+                              ...assignedExams.map((assignment) {
+                                final exam = assignment['exam'];
+                                final hall = assignment['hall'];
+                                if (exam == null || hall == null)
+                                  return const SizedBox.shrink();
+
+                                final examDate = DateTime.parse(
+                                    exam['exam_date'] ??
+                                        DateTime.now().toString());
+                                final isToday = DateTime.now()
+                                        .difference(examDate)
+                                        .inDays ==
+                                    0;
+                                final isPast = DateTime.now().isAfter(examDate);
+
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  color: isPast
+                                      ? Colors.grey[100]
+                                      : isToday
+                                          ? Colors.green[50]
+                                          : Colors.white,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            CircleAvatar(
+                                              radius: 16,
+                                              backgroundColor: Theme.of(context)
+                                                  .primaryColor
+                                                  .withOpacity(0.1),
+                                              child: Icon(
+                                                Icons.meeting_room,
+                                                size: 18,
+                                                color: Theme.of(context)
+                                                    .primaryColor,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                'Hall ${hall['hall_id'] ?? ''}',
+                                                style: const TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                            if (isToday)
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.green[100],
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                  border: Border.all(
+                                                      color: Colors.green),
+                                                ),
+                                                child: const Text(
+                                                  'TODAY',
+                                                  style: TextStyle(
+                                                    color: Colors.green,
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Wrap(
+                                          spacing: 12,
+                                          runSpacing: 8,
+                                          children: [
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.calendar_today,
+                                                    size: 14,
+                                                    color: Colors.grey[600]),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  DateFormat('EEE, MMM d')
+                                                      .format(examDate),
+                                                  style: TextStyle(
+                                                    color: Colors.grey[700],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.access_time,
+                                                    size: 14,
+                                                    color: Colors.grey[600]),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  exam['time'] ?? '',
+                                                  style: TextStyle(
+                                                    color: Colors.grey[700],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.wb_sunny,
+                                                    size: 14,
+                                                    color: Colors.grey[600]),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  exam['session'] ?? '',
+                                                  style: TextStyle(
+                                                    color: Colors.grey[700],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ).animate().fadeIn().slideY(
+                                      begin: 0.2,
+                                      delay: Duration(
+                                          milliseconds: assignedExams
+                                                  .indexOf(assignment) *
+                                              100),
+                                    );
+                              }).toList(),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
-            ),
+      ),
+    );
+  }
+}
+
+class InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const InfoRow({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: Colors.grey[600]),
+        const SizedBox(width: 8),
+        Text(
+          '$label:',
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: 14,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1360,10 +1360,54 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
               onPressed: _toggleSeatingVisibility,
             ),
           if (!_isLoading)
-            IconButton(
+            PopupMenuButton<String>(
+              tooltip: 'Generate Reports',
               icon: const Icon(Icons.picture_as_pdf),
-              tooltip: 'Download PDF',
-              onPressed: _generateAndDownloadPDF,
+              onSelected: (value) {
+                switch (value) {
+                  case 'seating':
+                    _generateAndDownloadPDF();
+                    break;
+                  case 'daily':
+                    _generateDailyReport();
+                    break;
+                  case 'attendance':
+                    _generateAttendanceSheet();
+                    break;
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'seating',
+                  child: Row(
+                    children: [
+                      Icon(Icons.event_seat),
+                      SizedBox(width: 8),
+                      Text('Seating Arrangement'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'daily',
+                  child: Row(
+                    children: [
+                      Icon(Icons.calendar_today),
+                      SizedBox(width: 8),
+                      Text('Daily Report'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'attendance',
+                  child: Row(
+                    children: [
+                      Icon(Icons.assignment_turned_in),
+                      SizedBox(width: 8),
+                      Text('Attendance Sheet'),
+                    ],
+                  ),
+                ),
+              ],
             ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -2232,137 +2276,601 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
       }
     }
   }
-}
 
-class _EditSeatingDialog extends StatefulWidget {
-  final Map<String, dynamic> arrangement;
-  final List<Map<String, dynamic>> availableHalls;
+  Future<void> _generateDailyReport() async {
+    try {
+      if (_selectedDate == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please select a date first'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
 
-  const _EditSeatingDialog({
-    required this.arrangement,
-    required this.availableHalls,
-    Key? key,
-  }) : super(key: key);
+      setState(() => _isLoading = true);
 
-  @override
-  State<_EditSeatingDialog> createState() => _EditSeatingDialogState();
-}
+      final pdf = pw.Document();
+      final dateStr = _selectedDate!.toString().split(' ')[0];
+      final allArrangements = <Map<String, dynamic>>[];
 
-class _EditSeatingDialogState extends State<_EditSeatingDialog> {
-  late String selectedHall;
-  late int selectedColumn;
-  late int selectedRow;
-  late int maxColumns;
-  late int maxRows;
+      for (final hallArrangements in _seatingArrangements.values) {
+        if (hallArrangements.containsKey(dateStr)) {
+          allArrangements.addAll(hallArrangements[dateStr]!);
+        }
+      }
 
-  @override
-  void initState() {
-    super.initState();
-    selectedHall = widget.arrangement['hall_id'];
-    selectedColumn = widget.arrangement['column_no'];
-    selectedRow = widget.arrangement['row_no'];
-    _updateMaxDimensions();
-  }
+      if (allArrangements.isEmpty) {
+        throw Exception('No arrangements found for selected date');
+      }
 
-  void _updateMaxDimensions() {
-    final hall = widget.availableHalls.firstWhere(
-      (h) => h['hall_id'] == selectedHall,
-      orElse: () => widget.availableHalls.first,
-    );
-    maxColumns = hall['no_of_columns'];
-    maxRows = hall['no_of_rows'];
+      final sessionArrangements = <String, List<Map<String, dynamic>>>{};
+      for (final arr in allArrangements) {
+        final session = arr['exam']['session'] as String;
+        final normalizedSession = _normalizeSession(session);
+        sessionArrangements[normalizedSession] ??= [];
+        sessionArrangements[normalizedSession]!.add(arr);
+      }
 
-    // Ensure selected values are within bounds
-    if (selectedColumn >= maxColumns) {
-      selectedColumn = maxColumns - 1;
-    }
-    if (selectedRow >= maxRows) {
-      selectedRow = maxRows - 1;
-    }
-  }
+      // Sort sessions in order: Morning, Afternoon, Evening
+      final sortedSessions = ['MORNING', 'AFTERNOON', 'EVENING']
+          .where((session) => sessionArrangements.containsKey(session))
+          .toList();
 
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Edit Seating Arrangement'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          DropdownButtonFormField<String>(
-            value: selectedHall,
-            decoration: const InputDecoration(labelText: 'Hall'),
-            items: widget.availableHalls.map<DropdownMenuItem<String>>((hall) {
-              return DropdownMenuItem<String>(
-                value: hall['hall_id'],
-                child: Text(hall['hall_id']),
+      // Create a map to store course groups for each session
+      final sessionCourseGroups =
+          <String, Map<String, List<Map<String, dynamic>>>>{};
+      for (final session in sortedSessions) {
+        final sessionStudents = sessionArrangements[session]!;
+        sessionCourseGroups[session] = {};
+
+        // Group students by course for this session
+        for (final student in sessionStudents) {
+          final courseId = student['exam']['course_id'];
+          sessionCourseGroups[session]![courseId] ??= [];
+          sessionCourseGroups[session]![courseId]!.add(student);
+        }
+      }
+
+      // First page - Summary and Question Papers Required
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(40),
+          build: (context) {
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                // Title
+                pw.Center(
+                  child: pw.Column(
+                    children: [
+                      pw.Text(
+                        'Daily Examination Report',
+                        style: pw.TextStyle(
+                          fontSize: 24,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                      pw.SizedBox(height: 8),
+                      pw.Text(
+                        DateFormat('EEEE, MMMM d, y').format(_selectedDate!),
+                        style: const pw.TextStyle(fontSize: 16),
+                      ),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 30),
+
+                // Summary Section
+                pw.Text(
+                  'Summary',
+                  style: pw.TextStyle(
+                    fontSize: 16,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 10),
+                pw.Text('Total Sessions: ${sessionArrangements.length}'),
+                pw.Text('Total Students: ${allArrangements.length}'),
+
+                // Question Papers Required Section
+                pw.SizedBox(height: 20),
+                pw.Text(
+                  'Question Papers Required',
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 10),
+                ...sortedSessions.map((session) {
+                  final courseGroups = sessionCourseGroups[session]!;
+                  final sortedCourses = courseGroups.keys.toList()..sort();
+
+                  return pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'Session: ${_getSessionDisplayName(session)}',
+                        style: pw.TextStyle(
+                            fontSize: 12, fontWeight: pw.FontWeight.bold),
+                      ),
+                      ...sortedCourses.map((courseId) {
+                        final students = courseGroups[courseId]!;
+                        final paperCount = students.length;
+                        final extraPapers = (paperCount * 0.1).ceil();
+                        final totalPapers = paperCount + extraPapers;
+
+                        return pw.Padding(
+                          padding: const pw.EdgeInsets.only(left: 20),
+                          child: pw.Text(
+                            '$courseId = $paperCount papers + $extraPapers extra = $totalPapers total',
+                            style: const pw.TextStyle(fontSize: 12),
+                          ),
+                        );
+                      }).toList(),
+                      pw.SizedBox(height: 10),
+                    ],
+                  );
+                }).toList(),
+              ],
+            );
+          },
+        ),
+      );
+
+      // Additional pages - Session Details
+      for (final session in sortedSessions) {
+        pdf.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.all(40),
+            build: (context) {
+              final courseGroups = sessionCourseGroups[session]!;
+              final sortedCourses = courseGroups.keys.toList()..sort();
+
+              return pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'Session: ${_getSessionDisplayName(session)}',
+                    style: pw.TextStyle(
+                      fontSize: 18,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 20),
+
+                  // Course Details
+                  ...sortedCourses.map((courseId) {
+                    final students = courseGroups[courseId]!;
+                    final exam = students.first['exam'];
+                    final regularCount = students
+                        .where((s) => s['is_supplementary'] == false)
+                        .length;
+                    final suppCount = students
+                        .where((s) => s['is_supplementary'] == true)
+                        .length;
+
+                    return pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Course: $courseId',
+                          style: pw.TextStyle(
+                            fontSize: 14,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.only(left: 20),
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text('Time: ${exam['time']}'),
+                              pw.Text('Duration: ${exam['duration']} minutes'),
+                              pw.Text('Regular Students: $regularCount'),
+                              pw.Text('Supplementary Students: $suppCount'),
+                              pw.Text('Total Students: ${students.length}'),
+
+                              // Student List
+                              pw.SizedBox(height: 5),
+                              pw.Text('Students:',
+                                  style: const pw.TextStyle(fontSize: 11)),
+                              ...students.map((student) {
+                                final seatNumber = student['row_no'] *
+                                        student['hall']['no_of_columns'] +
+                                    student['column_no'] +
+                                    1;
+                                return pw.Text(
+                                  '${student['student_reg_no']} (Hall: ${student['hall_id']}, Seat: $seatNumber)',
+                                  style: const pw.TextStyle(fontSize: 10),
+                                );
+                              }).toList(),
+                            ],
+                          ),
+                        ),
+                        pw.SizedBox(height: 20),
+                      ],
+                    );
+                  }).toList(),
+
+                  // Hall-wise Distribution
+                  pw.Text(
+                    'Hall Distribution',
+                    style: pw.TextStyle(
+                      fontSize: 14,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 10),
+                  ...(() {
+                    final hallGroups = <String, List<Map<String, dynamic>>>{};
+                    for (final arr in sessionArrangements[session]!) {
+                      final hallId = arr['hall_id'] as String;
+                      hallGroups[hallId] ??= [];
+                      hallGroups[hallId]!.add(arr);
+                    }
+
+                    return hallGroups.entries.map((entry) {
+                      final hallId = entry.key;
+                      final students = entry.value;
+                      return pw.Padding(
+                        padding: const pw.EdgeInsets.only(left: 20),
+                        child: pw.Text(
+                          'Hall $hallId: ${students.length} students',
+                          style: const pw.TextStyle(fontSize: 10),
+                        ),
+                      );
+                    }).toList();
+                  }()),
+
+                  // Footer
+                  pw.Spacer(),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Container(
+                            width: 150,
+                            height: 1,
+                            color: PdfColors.black,
+                          ),
+                          pw.SizedBox(height: 5),
+                          pw.Text(
+                            'Prepared by',
+                            style: const pw.TextStyle(fontSize: 10),
+                          ),
+                        ],
+                      ),
+                      pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.end,
+                        children: [
+                          pw.Container(
+                            width: 150,
+                            height: 1,
+                            color: PdfColors.black,
+                          ),
+                          pw.SizedBox(height: 5),
+                          pw.Text(
+                            'Superintendent\'s Signature',
+                            style: const pw.TextStyle(fontSize: 10),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
               );
-            }).toList(),
-            onChanged: (value) {
-              if (value != null) {
-                setState(() {
-                  selectedHall = value;
-                  _updateMaxDimensions();
-                });
-              }
             },
           ),
-          const SizedBox(height: 16),
-          Row(
+        );
+      }
+
+      final bytes = await pdf.save();
+      final fileName =
+          'daily_report_${DateFormat('yyyy_MM_dd').format(_selectedDate!)}.pdf';
+
+      if (kIsWeb) {
+        final blob = html.Blob([bytes], 'application/pdf');
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        final anchor = html.document.createElement('a') as html.AnchorElement
+          ..href = url
+          ..style.display = 'none'
+          ..download = fileName;
+        html.document.body?.children.add(anchor);
+        anchor.click();
+        html.document.body?.children.remove(anchor);
+        html.Url.revokeObjectUrl(url);
+      } else {
+        final output = await getTemporaryDirectory();
+        final file = File('${output.path}/$fileName');
+        await file.writeAsBytes(bytes);
+
+        final uri = Uri.file(file.path);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri);
+        } else {
+          throw 'Could not open the PDF file';
+        }
+      }
+
+      setState(() => _isLoading = false);
+    } catch (error) {
+      developer.log('Error generating daily report: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating daily report: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _generateAttendanceSheet() async {
+    try {
+      if (_selectedDate == null || _selectedSession == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please select a date and session first'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      setState(() => _isLoading = true);
+
+      // Create PDF document
+      final pdf = pw.Document();
+      final headerStyle = pw.TextStyle(
+        fontSize: 14,
+        fontWeight: pw.FontWeight.bold,
+      );
+      final normalStyle = pw.TextStyle(fontSize: 10);
+      final smallStyle = pw.TextStyle(fontSize: 8);
+
+      // Get arrangements for selected date and session
+      final dateStr = _selectedDate!.toString().split(' ')[0];
+      final arrangements = _seatingArrangements.values
+          .expand((dateArrs) => dateArrs[dateStr] ?? [])
+          .where((arr) => arr['exam']['session'] == _selectedSession)
+          .toList();
+
+      if (arrangements.isEmpty) {
+        throw Exception('No arrangements found for selected date and session');
+      }
+
+      // Group by course
+      final courseArrangements = <String, List<Map<String, dynamic>>>{};
+      for (final arr in arrangements) {
+        final courseId = arr['exam']['course_id'] as String;
+        courseArrangements[courseId] ??= [];
+        courseArrangements[courseId]!.add(arr);
+      }
+
+      // Get all students and sort them
+      final allStudents =
+          courseArrangements.values.expand((students) => students).toList();
+
+      // Sort students by hall and seat number
+      allStudents.sort((a, b) {
+        final hallCompare = a['hall_id'].compareTo(b['hall_id']);
+        if (hallCompare != 0) return hallCompare;
+
+        final aSeat =
+            a['row_no'] * a['hall']['no_of_columns'] + a['column_no'] + 1;
+        final bSeat =
+            b['row_no'] * b['hall']['no_of_columns'] + b['column_no'] + 1;
+        return aSeat.compareTo(bSeat);
+      });
+
+      // Get unique halls
+      final halls = allStudents
+          .map((s) => s['hall_id'] as String)
+          .toSet()
+          .toList()
+        ..sort();
+
+      // Course summary component
+      final courseSummary = pw.Container(
+        padding: const pw.EdgeInsets.all(5),
+        margin: const pw.EdgeInsets.symmetric(vertical: 10),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(width: 0.5),
+        ),
+        child: pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
+          children: courseArrangements.entries.map((entry) {
+            final exam = entry.value.first['exam'];
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text('${entry.key} (${entry.value.length} students)',
+                    style: normalStyle),
+                pw.Text('Time: ${exam['time']}', style: smallStyle),
+                pw.Text('Duration: ${exam['duration']} min', style: smallStyle),
+              ],
+            );
+          }).toList(),
+        ),
+      );
+
+      // Footer component
+      final footer = pw.Container(
+        margin: const pw.EdgeInsets.only(top: 20),
+        child: pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Container(
+                  width: 150,
+                  height: 1,
+                  color: PdfColors.black,
+                ),
+                pw.SizedBox(height: 4),
+                pw.Text('Invigilator\'s Signature', style: smallStyle),
+              ],
+            ),
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                pw.Container(
+                  width: 150,
+                  height: 1,
+                  color: PdfColors.black,
+                ),
+                pw.SizedBox(height: 4),
+                pw.Text('Superintendent\'s Signature', style: smallStyle),
+              ],
+            ),
+          ],
+        ),
+      );
+
+      // Create PDF pages for each hall
+      for (final hallId in halls) {
+        final hallStudents =
+            allStudents.where((s) => s['hall_id'] == hallId).toList();
+
+        // Header with current hall
+        final header = pw.Container(
+          padding: const pw.EdgeInsets.all(10),
+          decoration: pw.BoxDecoration(
+            border: pw.Border.all(width: 1),
+            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
+          ),
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: DropdownButtonFormField<int>(
-                  value: selectedColumn,
-                  decoration: const InputDecoration(labelText: 'Column'),
-                  items: List.generate(maxColumns, (index) {
-                    return DropdownMenuItem<int>(
-                      value: index,
-                      child: Text((index + 1).toString()),
-                    );
-                  }),
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() => selectedColumn = value);
-                    }
-                  },
-                ),
+              pw.Text(
+                'Examination Attendance Sheet',
+                style: headerStyle,
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: DropdownButtonFormField<int>(
-                  value: selectedRow,
-                  decoration: const InputDecoration(labelText: 'Row'),
-                  items: List.generate(maxRows, (index) {
-                    return DropdownMenuItem<int>(
-                      value: index,
-                      child: Text((index + 1).toString()),
-                    );
-                  }),
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() => selectedRow = value);
-                    }
-                  },
-                ),
+              pw.SizedBox(height: 8),
+              pw.Text(
+                'Date: ${DateFormat('MMMM d, y').format(_selectedDate!)}',
+                style: normalStyle,
+              ),
+              pw.Text(
+                'Session: ${_getSessionDisplayName(_selectedSession!)}',
+                style: normalStyle,
+              ),
+              pw.SizedBox(height: 4),
+              pw.Text(
+                'Hall(s): ${halls.join(", ")}',
+                style: normalStyle,
               ),
             ],
           ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, {
-            'hall_id': selectedHall,
-            'column_no': selectedColumn,
-            'row_no': selectedRow,
-          }),
-          child: const Text('Save'),
-        ),
-      ],
-    );
+        );
+
+        // Prepare table data for current hall
+        final List<List<String>> tableData = hallStudents.map((student) {
+          final seatNumber =
+              student['row_no'] * student['hall']['no_of_columns'] +
+                  student['column_no'] +
+                  1;
+          return <String>[
+            'S$seatNumber',
+            student['student_reg_no'].toString(),
+            student['exam']['course_id'],
+            '' // Signature space
+          ];
+        }).toList();
+
+        // Create table
+        final table = pw.Table.fromTextArray(
+          headers: ['Seat', 'Reg. No.', 'Course', 'Signature'],
+          data: tableData,
+          border: pw.TableBorder.all(width: 0.5),
+          headerStyle: normalStyle.copyWith(fontWeight: pw.FontWeight.bold),
+          cellStyle: smallStyle,
+          columnWidths: {
+            0: const pw.FixedColumnWidth(30), // Seat
+            1: const pw.FixedColumnWidth(80), // Reg No
+            2: const pw.FixedColumnWidth(80), // Course
+            3: const pw.FixedColumnWidth(160), // Signature (wider)
+          },
+          cellHeight: 20,
+          cellAlignments: {
+            0: pw.Alignment.center,
+            1: pw.Alignment.center,
+            2: pw.Alignment.center,
+            3: pw.Alignment.centerLeft,
+          },
+        );
+
+        // Add page for current hall
+        pdf.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.all(20),
+            build: (context) {
+              return pw.Column(
+                children: [
+                  header,
+                  courseSummary,
+                  table,
+                  footer,
+                ],
+              );
+            },
+          ),
+        );
+      }
+
+      // Save and download PDF
+      final bytes = await pdf.save();
+      final fileName =
+          'attendance_sheet_${DateFormat('yyyy_MM_dd').format(_selectedDate!)}_${_selectedSession}.pdf';
+
+      if (kIsWeb) {
+        final blob = html.Blob([bytes], 'application/pdf');
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        final anchor = html.document.createElement('a') as html.AnchorElement
+          ..href = url
+          ..style.display = 'none'
+          ..download = fileName;
+        html.document.body?.children.add(anchor);
+        anchor.click();
+        html.document.body?.children.remove(anchor);
+        html.Url.revokeObjectUrl(url);
+      } else {
+        final output = await getTemporaryDirectory();
+        final file = File('${output.path}/$fileName');
+        await file.writeAsBytes(bytes);
+
+        final uri = Uri.file(file.path);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri);
+        } else {
+          throw 'Could not open the PDF file';
+        }
+      }
+
+      setState(() => _isLoading = false);
+    } catch (error) {
+      developer.log('Error generating attendance sheet: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating attendance sheet: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => _isLoading = false);
+      }
+    }
   }
 }
 
@@ -2494,6 +3002,138 @@ class _DateFilterDialogState extends State<_DateFilterDialog> {
             });
           },
           child: const Text('Apply'),
+        ),
+      ],
+    );
+  }
+}
+
+class _EditSeatingDialog extends StatefulWidget {
+  final Map<String, dynamic> arrangement;
+  final List<Map<String, dynamic>> availableHalls;
+
+  const _EditSeatingDialog({
+    required this.arrangement,
+    required this.availableHalls,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  State<_EditSeatingDialog> createState() => _EditSeatingDialogState();
+}
+
+class _EditSeatingDialogState extends State<_EditSeatingDialog> {
+  late String selectedHall;
+  late int selectedColumn;
+  late int selectedRow;
+  late int maxColumns;
+  late int maxRows;
+
+  @override
+  void initState() {
+    super.initState();
+    selectedHall = widget.arrangement['hall_id'];
+    selectedColumn = widget.arrangement['column_no'];
+    selectedRow = widget.arrangement['row_no'];
+    _updateMaxDimensions();
+  }
+
+  void _updateMaxDimensions() {
+    final hall = widget.availableHalls.firstWhere(
+      (h) => h['hall_id'] == selectedHall,
+      orElse: () => widget.availableHalls.first,
+    );
+    maxColumns = hall['no_of_columns'];
+    maxRows = hall['no_of_rows'];
+
+    // Ensure selected values are within bounds
+    if (selectedColumn >= maxColumns) {
+      selectedColumn = maxColumns - 1;
+    }
+    if (selectedRow >= maxRows) {
+      selectedRow = maxRows - 1;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit Seating Arrangement'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DropdownButtonFormField<String>(
+            value: selectedHall,
+            decoration: const InputDecoration(labelText: 'Hall'),
+            items: widget.availableHalls.map<DropdownMenuItem<String>>((hall) {
+              return DropdownMenuItem<String>(
+                value: hall['hall_id'],
+                child: Text(hall['hall_id']),
+              );
+            }).toList(),
+            onChanged: (value) {
+              if (value != null) {
+                setState(() {
+                  selectedHall = value;
+                  _updateMaxDimensions();
+                });
+              }
+            },
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<int>(
+                  value: selectedColumn,
+                  decoration: const InputDecoration(labelText: 'Column'),
+                  items: List.generate(maxColumns, (index) {
+                    return DropdownMenuItem<int>(
+                      value: index,
+                      child: Text((index + 1).toString()),
+                    );
+                  }),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() => selectedColumn = value);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: DropdownButtonFormField<int>(
+                  value: selectedRow,
+                  decoration: const InputDecoration(labelText: 'Row'),
+                  items: List.generate(maxRows, (index) {
+                    return DropdownMenuItem<int>(
+                      value: index,
+                      child: Text((index + 1).toString()),
+                    );
+                  }),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() => selectedRow = value);
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, {
+            'hall_id': selectedHall,
+            'column_no': selectedColumn,
+            'row_no': selectedRow,
+          }),
+          child: const Text('Save'),
         ),
       ],
     );

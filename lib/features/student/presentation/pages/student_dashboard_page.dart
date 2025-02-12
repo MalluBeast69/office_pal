@@ -542,11 +542,18 @@ class _StudentDashboardPageState extends ConsumerState<StudentDashboardPage> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 _buildExamDetail(
-                  icon: exam['session'] == 'FN'
+                  icon: exam['session'].toString().toUpperCase() == 'FN' ||
+                          exam['session'].toString().toUpperCase() == 'MORNING'
                       ? Icons.wb_sunny
                       : Icons.wb_twilight,
-                  label: exam['session'] == 'FN' ? 'Morning' : 'Afternoon',
-                  color: exam['session'] == 'FN' ? Colors.blue : Colors.orange,
+                  label: exam['session'].toString().toUpperCase() == 'FN' ||
+                          exam['session'].toString().toUpperCase() == 'MORNING'
+                      ? 'Morning'
+                      : 'Afternoon',
+                  color: exam['session'].toString().toUpperCase() == 'FN' ||
+                          exam['session'].toString().toUpperCase() == 'MORNING'
+                      ? Colors.blue
+                      : Colors.orange,
                 ),
                 _buildExamDetail(
                   icon: Icons.access_time,

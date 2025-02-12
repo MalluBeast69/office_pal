@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:office_pal/core/utils/screen_utils.dart';
 import 'faculty_management_page.dart';
 import 'student_management_page.dart';
 import 'course_management_page.dart';
@@ -38,6 +39,11 @@ class _SuperintendentDashboardPageState
   void initState() {
     super.initState();
     _loadData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (MediaQuery.of(context).size.width < 600) {
+        showScreenSizeWarning(context);
+      }
+    });
   }
 
   Future<void> _loadData() async {

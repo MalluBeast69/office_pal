@@ -67,11 +67,25 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
       final response =
           await Supabase.instance.client.from('seating_arr').select('''
             *,
-            exam!inner(*),
+            exam:exam_id(*,
+              course:course_id(
+                course_name
+              )
+            ),
             hall:hall_id(*)
           ''').order('created_at');
 
       final arrangements = List<Map<String, dynamic>>.from(response);
+
+      // Process arrangements to include course names
+      for (var arrangement in arrangements) {
+        if (arrangement['exam'] != null &&
+            arrangement['exam']['course'] != null) {
+          arrangement['exam']['course_name'] =
+              arrangement['exam']['course']['course_name'] ?? 'Unknown Course';
+        }
+      }
+
       _groupArrangements(arrangements);
 
       if (mounted) {
@@ -98,7 +112,7 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
       final hallId = arrangement['hall_id'];
       final exam = arrangement['exam'];
       final date = exam['exam_date'].toString().split(' ')[0];
-      final session = exam['session'];
+      final session = _normalizeSession(exam['session']);
 
       grouped[hallId] ??= {};
       grouped[hallId]![date] ??= [];
@@ -122,9 +136,11 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
 
     // Apply session filter
     if (_selectedSession != null) {
+      final normalizedSelectedSession = _normalizeSession(_selectedSession!);
       _filteredArrangements = Map.from(_filteredArrangements)
         ..forEach((date, sessions) {
-          sessions.removeWhere((session, _) => session != _selectedSession);
+          sessions.removeWhere((session, _) =>
+              _normalizeSession(session) != normalizedSelectedSession);
         })
         ..removeWhere((_, sessions) => sessions.isEmpty);
     }
@@ -249,8 +265,8 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                     'Date',
                     DateFormat('EEEE, MMMM d, y')
                         .format(DateTime.parse(exam['exam_date']))),
-                _buildDetailRow('Session',
-                    exam['session'] == 'FN' ? 'Morning' : 'Afternoon'),
+                _buildDetailRow(
+                    'Session', _getSessionDisplayName(exam['session'])),
                 _buildDetailRow('Time', exam['time']),
                 _buildDetailRow('Duration', '${exam['duration']} minutes'),
                 _buildDetailRow('Hall', arrangement['hall_id']),
@@ -690,80 +706,42 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
   }
 
   Widget _buildSessionSelection(List<Map<String, dynamic>> arrangements) {
-    final sessions = <String, List<Map<String, dynamic>>>{};
-    for (final arrangement in arrangements) {
-      final session = arrangement['exam']['session'];
-      sessions[session] ??= [];
-      sessions[session]!.add(arrangement);
-    }
+    final sessions = arrangements
+        .map((arr) => arr['exam']['session'] as String)
+        .toSet()
+        .toList();
 
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                const Icon(Icons.access_time),
-                const SizedBox(width: 8),
-                Text(
-                  'Select Session',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const Spacer(),
-                TextButton.icon(
-                  icon: const Icon(Icons.arrow_back),
-                  label: const Text('Back'),
-                  onPressed: () {
-                    setState(() {
-                      _selectedDate = null;
-                    });
-                  },
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: sessions.length,
-              itemBuilder: (context, index) {
-                final session = sessions.keys.elementAt(index);
-                final sessionArrangements = sessions[session]!;
-                final examCount = sessionArrangements.length;
-                final ismorning = session == 'FN';
-
-                return Card(
-                  child: ListTile(
-                    leading: Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: ismorning ? Colors.blue : Colors.orange,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        ismorning ? Icons.wb_sunny : Icons.wb_twilight,
-                        color: Colors.white,
-                        size: 24,
-                      ),
-                    ),
-                    title: Text(
-                        ismorning ? 'Morning Session' : 'Afternoon Session'),
-                    subtitle: Text('$examCount students assigned'),
-                    onTap: () {
-                      setState(() {
-                        _selectedSession = session;
-                      });
-                    },
-                  ),
-                );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Select Session',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: sessions.map((session) {
+            final normalizedSession = _normalizeSession(session);
+            return ChoiceChip(
+              selected: _selectedSession == session,
+              label: Text(_getSessionDisplayName(session)),
+              avatar: Icon(
+                normalizedSession == 'MORNING'
+                    ? Icons.wb_sunny
+                    : Icons.wb_twilight,
+                size: 18,
+              ),
+              onSelected: (_) {
+                setState(() {
+                  _selectedSession = session;
+                });
               },
-            ),
-          ),
-        ],
-      ),
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 
@@ -800,14 +778,18 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
     }
 
     // Get unique exams in current seating
-    final exams = sessionArrangements
-        .map((s) => s['exam'])
-        .toSet()
-        .map((exam) => {
-              'course_code': exam['course_id'],
-              'course_name': exam['course_name'] ?? 'N/A',
-            })
-        .toList();
+    final examMap = <String, Map<String, String>>{};
+    for (final arrangement in sessionArrangements) {
+      final exam = arrangement['exam'];
+      final courseId = exam['course_id'];
+      if (!examMap.containsKey(courseId)) {
+        examMap[courseId] = {
+          'course_code': courseId,
+          'course_name': exam['course_name'] ?? 'Unknown Course',
+        };
+      }
+    }
+    final exams = examMap.values.toList();
 
     // Calculate statistics with null safety
     final totalStudents = sessionArrangements.length;
@@ -830,10 +812,12 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
               const SizedBox(width: 16),
               CircleAvatar(
                 backgroundColor:
-                    _selectedSession == 'FN' ? Colors.blue : Colors.orange,
+                    _normalizeSession(_selectedSession!) == 'MORNING'
+                        ? Colors.blue
+                        : Colors.orange,
                 radius: 16,
                 child: Text(
-                  _selectedSession!,
+                  _getSessionDisplayName(_selectedSession!),
                   style: const TextStyle(color: Colors.white, fontSize: 12),
                 ),
               ),
@@ -895,7 +879,7 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                             'Filter by Exam',
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 8),
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
@@ -908,76 +892,25 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                                   setState(() => _selectedExam = null);
                                 },
                               ),
-                              ...exams.map((exam) {
-                                final courseCode =
-                                    exam['course_code'] as String;
-                                final courseName =
-                                    exam['course_name'] as String;
-                                final studentCount = sessionArrangements
-                                    .where((arr) =>
-                                        arr['exam']['course_id'] == courseCode)
-                                    .length;
-
-                                return FilterChip(
-                                  selected: _selectedExam == courseCode,
-                                  showCheckmark: false,
-                                  label: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '$courseCode - $courseName',
-                                        style: TextStyle(
-                                          fontSize: Theme.of(context)
-                                              .textTheme
-                                              .bodyMedium!
-                                              .fontSize,
-                                        ),
+                              ...exams.map((exam) => FilterChip(
+                                    selected:
+                                        _selectedExam == exam['course_code'],
+                                    showCheckmark: false,
+                                    label: Text(
+                                      '${exam['course_code']} - ${exam['course_name']}',
+                                      style: TextStyle(
+                                        fontSize: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium!
+                                            .fontSize,
                                       ),
-                                      Text(
-                                        '$studentCount students',
-                                        style: TextStyle(
-                                          fontSize: Theme.of(context)
-                                              .textTheme
-                                              .bodySmall!
-                                              .fontSize,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  onSelected: (_) {
-                                    setState(() => _selectedExam = courseCode);
-                                  },
-                                );
-                              }),
+                                    ),
+                                    onSelected: (_) {
+                                      setState(() => _selectedExam =
+                                          exam['course_code'] as String);
+                                    },
+                                  )),
                             ],
-                          ),
-                          const SizedBox(height: 16),
-                          // Statistics
-                          const Divider(),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Statistics',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 8),
-                          _buildStatisticRow(
-                            'Total Students',
-                            totalStudents.toString(),
-                            Icons.people,
-                          ),
-                          const SizedBox(height: 8),
-                          _buildStatisticRow(
-                            'Regular',
-                            regularStudents.toString(),
-                            Icons.person,
-                          ),
-                          const SizedBox(height: 8),
-                          _buildStatisticRow(
-                            'Supplementary',
-                            supplementaryStudents.toString(),
-                            Icons.person_outline,
                           ),
                         ],
                       ),
@@ -1466,7 +1399,8 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                     margin: const EdgeInsets.all(16),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceVariant,
+                      color:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: Theme.of(context).colorScheme.outline,
@@ -1600,7 +1534,7 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                   'Course', exam['course_id']?.toString() ?? 'Not specified'),
               _buildDetailRow(
                 'Session',
-                exam['session'] == 'FN' ? 'Morning' : 'Afternoon',
+                _getSessionDisplayName(exam['session']),
               ),
               _buildDetailRow(
                   'Time', exam['time']?.toString() ?? 'Not specified'),
@@ -1860,8 +1794,8 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
         fontSize: 14,
         fontWeight: pw.FontWeight.bold,
       );
-      final normalStyle = const pw.TextStyle(fontSize: 9);
-      final smallStyle = const pw.TextStyle(fontSize: 7);
+      const normalStyle = pw.TextStyle(fontSize: 9);
+      const smallStyle = pw.TextStyle(fontSize: 7);
 
       // Group arrangements by date and session
       final arrangementsByDateAndSession =
@@ -2211,13 +2145,32 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
   String _getSessionDisplayName(String session) {
     switch (session.toUpperCase()) {
       case 'FN':
+      case 'MORNING':
         return 'Morning';
       case 'AN':
+      case 'AFTERNOON':
         return 'Afternoon';
       case 'EN':
+      case 'EVENING':
         return 'Evening';
       default:
-        return session; // Return original value if unknown
+        return session;
+    }
+  }
+
+  String _normalizeSession(String session) {
+    switch (session.toUpperCase()) {
+      case 'FN':
+      case 'MORNING':
+        return 'MORNING';
+      case 'AN':
+      case 'AFTERNOON':
+        return 'AFTERNOON';
+      case 'EN':
+      case 'EVENING':
+        return 'EVENING';
+      default:
+        return session.toUpperCase();
     }
   }
 

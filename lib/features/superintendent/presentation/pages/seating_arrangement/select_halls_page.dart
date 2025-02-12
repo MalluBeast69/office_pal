@@ -25,7 +25,7 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
   String _searchQuery = '';
   Map<String, Set<String>> _selectedHallsBySession = {};
   Map<String, Map<String, int>> _capacityNeededPerDateAndSession = {};
-  int _maxCapacityNeeded = 0;
+  final int _maxCapacityNeeded = 0;
   String? _selectedDepartment;
   List<String> _departments = [];
   String? _selectedSession;
@@ -41,7 +41,6 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
     try {
       setState(() => _isLoading = true);
 
-      // Load registered students data first
       final registeredStudentsResponse =
           await Supabase.instance.client.from('registered_students').select('''
             student_reg_no,
@@ -55,9 +54,7 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
           ''').in_('student_reg_no', widget.selectedStudents);
 
       _students = List<Map<String, dynamic>>.from(registeredStudentsResponse);
-      developer.log('Loaded ${_students.length} registered students');
 
-      // Group students by date and session, tracking unique students
       final studentsByDateAndSession =
           <String, Map<String, Map<String, Set<String>>>>{};
 
@@ -66,28 +63,23 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
         final session = exam['session'] as String;
         final courseId = exam['course_id'] as String;
 
-        developer.log('Processing exam: $courseId on $date, session: $session');
-
         studentsByDateAndSession[date] ??= {};
         studentsByDateAndSession[date]![session] ??= {
           'regular': <String>{},
           'supplementary': <String>{},
-          'all': <String>{}, // Track all students regardless of type
+          'all': <String>{},
         };
 
-        // Find students registered for this course
         final examStudents =
             _students.where((s) => s['course_code'] == courseId);
 
         var regularCount = 0;
         var supplementaryCount = 0;
 
-        // Add students to sets to ensure uniqueness
         for (final student in examStudents) {
           final studentId = student['student_reg_no'] as String;
           final isRegular = student['is_reguler'] as bool;
 
-          // Only count if student hasn't been added to either category
           if (!studentsByDateAndSession[date]![session]!['all']!
               .contains(studentId)) {
             studentsByDateAndSession[date]![session]!['all']!.add(studentId);
@@ -103,12 +95,8 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
             }
           }
         }
-
-        developer.log(
-            'Students for exam $courseId: Regular: $regularCount, Supplementary: $supplementaryCount');
       }
 
-      // Calculate capacity needed for each date and session
       _capacityNeededPerDateAndSession = {};
       for (var dateEntry in studentsByDateAndSession.entries) {
         final date = dateEntry.key;
@@ -116,29 +104,11 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
 
         for (var sessionEntry in dateEntry.value.entries) {
           final session = sessionEntry.key;
-          final regularStudents = sessionEntry.value['regular']!;
-          final supplementaryStudents = sessionEntry.value['supplementary']!;
           final allStudents = sessionEntry.value['all']!;
-
-          final totalRegular = regularStudents.length;
-          final totalSupplementary = supplementaryStudents.length;
-          final totalStudents = allStudents.length;
-
-          // Store actual student count
-          _capacityNeededPerDateAndSession[date]![session] = totalStudents;
-
-          developer.log('Session $session total students: $totalStudents ' +
-              '(Regular: $totalRegular, Supplementary: $totalSupplementary)');
-          developer
-              .log('Regular students: ${regularStudents.toList().join(", ")}');
-          developer.log(
-              'Supplementary students: ${supplementaryStudents.toList().join(", ")}');
-          developer
-              .log('All unique students: ${allStudents.toList().join(", ")}');
+          _capacityNeededPerDateAndSession[date]![session] = allStudents.length;
         }
       }
 
-      // Load halls data
       final hallsResponse = await Supabase.instance.client
           .from('hall')
           .select()
@@ -153,7 +123,6 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
           ..sort();
         _isLoading = false;
 
-        // Initialize selected halls for each session
         _selectedHallsBySession = {};
         for (final dateEntry in _capacityNeededPerDateAndSession.entries) {
           for (final sessionEntry in dateEntry.value.entries) {
@@ -161,14 +130,12 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
           }
         }
 
-        // Set initial selected session
         if (_capacityNeededPerDateAndSession.isNotEmpty) {
           final firstDate = _capacityNeededPerDateAndSession.keys.first;
           if (_capacityNeededPerDateAndSession[firstDate]?.isNotEmpty ??
               false) {
             _selectedSession =
                 _capacityNeededPerDateAndSession[firstDate]!.keys.first;
-            developer.log('Initial selected session: $_selectedSession');
           }
         }
       });
@@ -229,7 +196,6 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
   int _getCapacityNeededForSession(String session) {
     // Find the maximum capacity needed for this session across all dates
     int maxCapacity = 0;
-    developer.log('Calculating capacity needed for session: $session');
 
     for (final dateEntry in _capacityNeededPerDateAndSession.entries) {
       final sessionCapacity = dateEntry.value[session] ?? 0;
@@ -238,7 +204,6 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
       }
     }
 
-    developer.log('Total students for $session session: $maxCapacity');
     return maxCapacity;
   }
 
@@ -486,8 +451,6 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
   }
 
   void _autoSelectHalls() {
-    developer.log('Auto-selecting halls for all sessions');
-
     // Get all unique sessions
     final allSessions = _capacityNeededPerDateAndSession.values
         .expand((sessions) => sessions.keys)
@@ -499,13 +462,10 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
 
     // Process each session
     for (final session in allSessions) {
-      developer.log('Auto-selecting halls for session: $session');
       final availableHalls = List<Map<String, dynamic>>.from(_halls);
-      developer.log('Available halls: ${availableHalls.length}');
 
       // Calculate total students for this session
       final totalStudents = _getCapacityNeededForSession(session);
-      developer.log('Total students to seat: $totalStudents');
 
       // Initialize selection set for this session
       newSelections[session] = {};
@@ -552,10 +512,6 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
           newSelections[session]!.add(hall['hall_id'].toString());
         }
       }
-
-      developer
-          .log('Selected ${selectedHalls.length} halls for session $session');
-      developer.log('Remaining students: $remainingStudents');
     }
 
     // Update the state with new selections
@@ -743,7 +699,7 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
                                       ? Theme.of(context).colorScheme.primary
                                       : Theme.of(context)
                                           .colorScheme
-                                          .surfaceVariant,
+                                          .surfaceContainerHighest,
                                   labelStyle: TextStyle(
                                     color: isCurrentSession
                                         ? Theme.of(context)
@@ -964,14 +920,6 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
                                         });
                                       }
                                     }
-                                  }
-
-                                  developer
-                                      .log('Selected halls with sessions:');
-                                  for (final hall
-                                      in allSelectedHallsWithSessions) {
-                                    developer.log(
-                                        'Hall ${hall['hall_id']} - Session: ${hall['session']} - Date: ${hall['exam_date']}');
                                   }
 
                                   Navigator.push(

@@ -98,7 +98,8 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
     try {
       final response = await Supabase.instance.client
           .from('exam')
-          .select('*, course:course_id(course_type)')
+          .select(
+              '*, course:course_id(course_code, course_name, course_type, dept_id)')
           .order('exam_date');
 
       if (mounted) {
@@ -434,6 +435,16 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
       List<Map<String, dynamic>> exams) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+
+    // First, deduplicate exams based on course_id
+    final uniqueExams = <String, Map<String, dynamic>>{};
+    for (var exam in exams) {
+      final courseId = exam['course_id'];
+      if (!uniqueExams.containsKey(courseId)) {
+        uniqueExams[courseId] = exam;
+      }
+    }
+    exams = uniqueExams.values.toList();
 
     return exams.where((exam) {
       // Search filter

@@ -22,14 +22,14 @@ class SelectFacultyPage extends ConsumerStatefulWidget {
 
 class _SelectFacultyPageState extends ConsumerState<SelectFacultyPage> {
   List<Map<String, dynamic>> _faculty = [];
-  Map<String, String> _hallFacultyMap = {};
+  final Map<String, String> _hallFacultyMap = {};
   bool _isLoading = false;
   String _searchQuery = '';
   late int _requiredFaculty;
   // Track hall-session combinations
-  Map<String, Set<String>> _hallSessionsMap = {};
+  final Map<String, Set<String>> _hallSessionsMap = {};
   // Track unique hall-session pairs that need faculty
-  Set<String> _uniqueHallSessionPairs = {};
+  final Set<String> _uniqueHallSessionPairs = {};
 
   @override
   void initState() {
@@ -119,39 +119,23 @@ class _SelectFacultyPageState extends ConsumerState<SelectFacultyPage> {
     _hallSessionsMap.clear();
     _uniqueHallSessionPairs.clear();
 
-    // First, initialize the hall sessions map
     for (final hall in widget.selectedHalls) {
       final hallId = hall['hall_id'].toString();
       _hallSessionsMap[hallId] = <String>{};
     }
 
-    // For each hall, add its session from the selectedHalls data
     for (final hall in widget.selectedHalls) {
       final hallId = hall['hall_id'].toString();
       final session = hall['session'] as String;
       final date = hall['exam_date'].toString().split(' ')[0];
 
-      // Add this session to the hall's set of sessions
       _hallSessionsMap[hallId]!.add(session);
 
-      // Create and add the unique hall-session-date combination
       final hallSessionKey = '$hallId|$session|$date';
       _uniqueHallSessionPairs.add(hallSessionKey);
-
-      developer.log('Added hall-session pair: $hallSessionKey');
     }
 
-    // Update required faculty count based on unique hall-session pairs
     _requiredFaculty = _uniqueHallSessionPairs.length;
-
-    // Log the final mappings for debugging
-    developer.log('Required faculty count: $_requiredFaculty');
-    for (final hallId in _hallSessionsMap.keys) {
-      developer.log(
-          'Hall $hallId sessions: ${_hallSessionsMap[hallId]!.join(", ")}');
-    }
-    developer.log(
-        'Unique hall-session pairs: ${_uniqueHallSessionPairs.join(", ")}');
   }
 
   String _getSessionDisplayName(String session) {
@@ -219,11 +203,6 @@ class _SelectFacultyPageState extends ConsumerState<SelectFacultyPage> {
         _hallFacultyMap[hallSessionKey] = selectedFaculty['faculty_id'];
         facultyAssignmentsByDate[date]![hallSessionKey] =
             selectedFaculty['faculty_id'];
-
-        developer.log(
-            'Assigned faculty ${selectedFaculty['faculty_name']} (${selectedFaculty['faculty_id']}) to $hallSessionKey');
-      } else {
-        developer.log('No available faculty for $hallSessionKey');
       }
     }
 
@@ -232,17 +211,12 @@ class _SelectFacultyPageState extends ConsumerState<SelectFacultyPage> {
 
   Future<void> _updateFacultyAvailability() async {
     try {
-      // Get all faculty IDs that have been assigned
       final assignedFacultyIds = _hallFacultyMap.values.toSet();
 
-      // Update is_available to false for assigned faculty
       await Supabase.instance.client
           .from('faculty')
           .update({'is_available': false}).in_(
               'faculty_id', assignedFacultyIds.toList());
-
-      developer.log(
-          'Updated availability for ${assignedFacultyIds.length} faculty members');
     } catch (error) {
       developer.log('Error updating faculty availability: $error');
       if (mounted) {

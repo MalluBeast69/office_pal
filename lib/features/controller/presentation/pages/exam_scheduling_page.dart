@@ -7,8 +7,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:excel/excel.dart' as excel;
 import 'package:office_pal/features/controller/domain/models/exam.dart';
 import 'package:office_pal/features/controller/presentation/providers/exam_provider.dart';
-import 'package:office_pal/features/controller/presentation/widgets/exam_schedule_preview_dialog.dart';
-import 'package:office_pal/features/controller/domain/repositories/exam_repository.dart';
 import 'package:office_pal/features/controller/presentation/widgets/excel_import_preview_dialog.dart';
 
 enum ExamType { internal, external }

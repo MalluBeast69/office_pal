@@ -124,10 +124,6 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
   @override
   void initState() {
     super.initState();
-    // Add initial row
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(examRowsProvider.notifier).addRow();
-    });
   }
 
   @override

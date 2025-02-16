@@ -34,6 +34,7 @@ class _SuperintendentDashboardPageState
     'exams': 0,
     'seating': 0,
   };
+  String _currentSection = 'dashboard';
 
   @override
   void initState() {
@@ -322,26 +323,527 @@ class _SuperintendentDashboardPageState
     }
   }
 
-  Widget _buildQuickStat(String title, int value, IconData icon, Color color) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-      child: Row(
+  @override
+  Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    final isSmallScreen = screenSize.width < 600;
+
+    return Scaffold(
+      appBar: isSmallScreen
+          ? AppBar(
+              title: const Text('Superintendent Dashboard'),
+              elevation: 0,
+              backgroundColor: Colors.transparent,
+              foregroundColor: Theme.of(context).colorScheme.onBackground,
+            )
+          : null,
+      body: Row(
         children: [
-          Icon(icon, size: 20, color: color),
-          const SizedBox(width: 8),
-          Text(
-            '$title:',
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
+          if (!isSmallScreen) _buildSidebar(),
+          Expanded(
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : RefreshIndicator(
+                    onRefresh: _loadData,
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isSmallScreen ? 12.0 : 24.0,
+                        vertical: isSmallScreen ? 12.0 : 24.0,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Top Bar with Notifications
+                          if (!isSmallScreen)
+                            Align(
+                              alignment: Alignment.topRight,
+                              child: Stack(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.notifications),
+                                    onPressed: () => _showNotificationsDialog(),
+                                  ),
+                                  if (notifications
+                                      .where((n) => n['status'] == 'pending')
+                                      .isNotEmpty)
+                                    Positioned(
+                                      right: 8,
+                                      top: 8,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red,
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                        ),
+                                        constraints: const BoxConstraints(
+                                          minWidth: 16,
+                                          minHeight: 16,
+                                        ),
+                                        child: Text(
+                                          notifications
+                                              .where((n) =>
+                                                  n['status'] == 'pending')
+                                              .length
+                                              .toString(),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          // Welcome Section with Quick Stats
+                          Container(
+                            padding: const EdgeInsets.all(24),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Theme.of(context).colorScheme.primary,
+                                  Theme.of(context)
+                                      .colorScheme
+                                      .primaryContainer,
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Welcome, Superintendent',
+                                  style: TextStyle(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Here\'s your overview for today',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.white.withOpacity(0.8),
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                                Wrap(
+                                  spacing: 16,
+                                  runSpacing: 16,
+                                  children: [
+                                    _buildQuickStatCard(
+                                      'Students',
+                                      stats['students'],
+                                      Icons.people,
+                                      Colors.blue,
+                                    ),
+                                    _buildQuickStatCard(
+                                      'Courses',
+                                      stats['courses'],
+                                      Icons.book,
+                                      Colors.green,
+                                    ),
+                                    _buildQuickStatCard(
+                                      'Departments',
+                                      stats['departments'],
+                                      Icons.business,
+                                      Colors.orange,
+                                    ),
+                                    _buildQuickStatCard(
+                                      'Faculty',
+                                      stats['faculty'],
+                                      Icons.school,
+                                      Colors.purple,
+                                    ),
+                                    _buildQuickStatCard(
+                                      'Halls',
+                                      stats['halls'],
+                                      Icons.meeting_room,
+                                      Colors.teal,
+                                    ),
+                                    _buildQuickStatCard(
+                                      'Exams',
+                                      stats['exams'],
+                                      Icons.assignment,
+                                      Colors.pink,
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 32),
+                          // Recent Activity Section
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: Card(
+                                  elevation: 2,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.history,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            const Text(
+                                              'Recent Activity',
+                                              style: TextStyle(
+                                                fontSize: 20,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 16),
+                                        // Recent Activity List
+                                        ...notifications
+                                            .take(5)
+                                            .map((notification) => ListTile(
+                                                  leading: CircleAvatar(
+                                                    backgroundColor: notification[
+                                                                'status'] ==
+                                                            'pending'
+                                                        ? Colors.orange
+                                                            .withOpacity(0.2)
+                                                        : notification[
+                                                                    'status'] ==
+                                                                'approved'
+                                                            ? Colors.green
+                                                                .withOpacity(
+                                                                    0.2)
+                                                            : Colors.red
+                                                                .withOpacity(
+                                                                    0.2),
+                                                    child: Icon(
+                                                      notification['type'] ==
+                                                              'leave_request'
+                                                          ? Icons.event_busy
+                                                          : Icons.notifications,
+                                                      color: notification[
+                                                                  'status'] ==
+                                                              'pending'
+                                                          ? Colors.orange
+                                                          : notification[
+                                                                      'status'] ==
+                                                                  'approved'
+                                                              ? Colors.green
+                                                              : Colors.red,
+                                                    ),
+                                                  ),
+                                                  title: Text(
+                                                      notification['title'] ??
+                                                          ''),
+                                                  subtitle: Text(
+                                                    notification['message'] ??
+                                                        '',
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                  trailing: Text(
+                                                    notification['status']
+                                                            ?.toUpperCase() ??
+                                                        'PENDING',
+                                                    style: TextStyle(
+                                                      color: notification[
+                                                                  'status'] ==
+                                                              'pending'
+                                                          ? Colors.orange
+                                                          : notification[
+                                                                      'status'] ==
+                                                                  'approved'
+                                                              ? Colors.green
+                                                              : Colors.red,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                )),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (!isSmallScreen) const SizedBox(width: 24),
+                              if (!isSmallScreen)
+                                Expanded(
+                                  child: Card(
+                                    elevation: 2,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(24),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                Icons.calendar_today,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .primary,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              const Text(
+                                                'Upcoming Events',
+                                                style: TextStyle(
+                                                  fontSize: 20,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 16),
+                                          // Upcoming Events List
+                                          _buildUpcomingEvent(
+                                            'Next Exam',
+                                            'Mathematics Final',
+                                            'Tomorrow, 9:00 AM',
+                                            Icons.assignment,
+                                            Colors.blue,
+                                          ),
+                                          const SizedBox(height: 12),
+                                          _buildUpcomingEvent(
+                                            'Faculty Meeting',
+                                            'Department Heads',
+                                            'Friday, 2:00 PM',
+                                            Icons.groups,
+                                            Colors.purple,
+                                          ),
+                                          const SizedBox(height: 12),
+                                          _buildUpcomingEvent(
+                                            'Results Due',
+                                            'First Semester',
+                                            'Next Week',
+                                            Icons.assessment,
+                                            Colors.orange,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+      drawer: isSmallScreen
+          ? Drawer(
+              child: _buildSidebar(),
+            )
+          : null,
+    );
+  }
+
+  Widget _buildSidebar() {
+    final user = Supabase.instance.client.auth.currentUser;
+    final email = user?.email ?? 'superintendent@example.com';
+    final name =
+        email.split('@')[0].split('.').map((s) => s.capitalize()).join(' ');
+
+    return Container(
+      width: 280,
+      color: Theme.of(context).colorScheme.primary,
+      child: Column(
+        children: [
+          // Profile Section
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            color: Theme.of(context).colorScheme.primary,
+            child: Column(
+              children: [
+                CircleAvatar(
+                  radius: 40,
+                  backgroundColor: Colors.white,
+                  child: Text(
+                    name.substring(0, 2).toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Superintendent',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.white.withOpacity(0.8),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 8),
-          Text(
-            value.toString(),
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
+          // Navigation Section
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(24),
+                  topRight: Radius.circular(24),
+                ),
+              ),
+              child: ListView(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                children: [
+                  _buildNavItem(
+                    'Dashboard',
+                    Icons.dashboard,
+                    'dashboard',
+                  ),
+                  _buildNavItem(
+                    'Students',
+                    Icons.people,
+                    'students',
+                  ),
+                  _buildNavItem(
+                    'Courses',
+                    Icons.book,
+                    'courses',
+                  ),
+                  _buildNavItem(
+                    'Departments',
+                    Icons.business,
+                    'departments',
+                  ),
+                  _buildNavItem(
+                    'Faculty',
+                    Icons.school,
+                    'faculty',
+                  ),
+                  _buildNavItem(
+                    'Halls',
+                    Icons.meeting_room,
+                    'halls',
+                  ),
+                  _buildNavItem(
+                    'Exams',
+                    Icons.assignment,
+                    'exams',
+                  ),
+                  _buildNavItem(
+                    'Seating',
+                    Icons.event_seat,
+                    'seating',
+                  ),
+                  // Notifications
+                  Stack(
+                    children: [
+                      _buildNavItem(
+                        'Notifications',
+                        Icons.notifications,
+                        'notifications',
+                      ),
+                      if (notifications
+                          .where((n) => n['status'] == 'pending')
+                          .isNotEmpty)
+                        Positioned(
+                          right: 24,
+                          top: 12,
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              notifications
+                                  .where((n) => n['status'] == 'pending')
+                                  .length
+                                  .toString(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Logout Button
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: Theme.of(context).colorScheme.surface,
+            child: Card(
+              elevation: 0,
+              color:
+                  Theme.of(context).colorScheme.errorContainer.withOpacity(0.1),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: Theme.of(context).colorScheme.error.withOpacity(0.2),
+                  width: 1,
+                ),
+              ),
+              child: InkWell(
+                onTap: () => _signOut(context),
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.logout,
+                        color: Theme.of(context).colorScheme.error,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Logout',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ],
@@ -349,249 +851,140 @@ class _SuperintendentDashboardPageState
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final screenSize = MediaQuery.of(context).size;
-    final isSmallScreen = screenSize.width < 600;
+  Widget _buildNavItem(String title, IconData icon, String section) {
+    final isSelected = _currentSection == section;
+    final color =
+        isSelected ? Theme.of(context).colorScheme.primary : Colors.grey;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Superintendent Dashboard'),
-        actions: [
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.notifications),
-                onPressed: () => _showNotificationsDialog(),
-              ),
-              if (notifications
-                  .where((n) => n['status'] == 'pending')
-                  .isNotEmpty)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 16,
-                      minHeight: 16,
-                    ),
-                    child: Text(
-                      notifications
-                          .where((n) => n['status'] == 'pending')
-                          .length
-                          .toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => _signOut(context),
+    return ListTile(
+      onTap: () {
+        setState(() => _currentSection = section);
+        if (section == 'notifications') {
+          _showNotificationsDialog();
+        } else if (section != 'dashboard') {
+          _navigateToManagement(section);
+        }
+      },
+      selected: isSelected,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      leading: Icon(icon, color: color),
+      title: Text(
+        title,
+        style: TextStyle(
+          color: color,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+    );
+  }
+
+  Widget _buildQuickStatCard(
+      String title, int value, IconData icon, Color color) {
+    return Container(
+      width: 180,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadData,
-              child: SingleChildScrollView(
-                padding: EdgeInsets.symmetric(
-                  horizontal: isSmallScreen ? 12.0 : 16.0,
-                  vertical: isSmallScreen ? 12.0 : 16.0,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4.0),
-                      child: Text(
-                        'Quick Stats',
-                        style: TextStyle(
-                          fontSize: isSmallScreen ? 20 : 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildQuickStat('Students', stats['students'],
-                                Icons.people, Colors.blue),
-                            _buildQuickStat('Courses', stats['courses'],
-                                Icons.book, Colors.green),
-                            _buildQuickStat('Departments', stats['departments'],
-                                Icons.business, Colors.orange),
-                            _buildQuickStat('Faculty', stats['faculty'],
-                                Icons.school, Colors.purple),
-                            _buildQuickStat('Halls', stats['halls'],
-                                Icons.meeting_room, Colors.teal),
-                            _buildQuickStat('Exams', stats['exams'],
-                                Icons.assignment, Colors.pink),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4.0),
-                      child: Text(
-                        'Management Tools',
-                        style: TextStyle(
-                          fontSize: isSmallScreen ? 20 : 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    if (isSmallScreen)
-                      ListView(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        children: [
-                          _ManagementCard(
-                            title: 'Student Management',
-                            description:
-                                'Manage student records and registrations',
-                            icon: Icons.people,
-                            color: Colors.blue,
-                            onTap: () => _navigateToManagement('students'),
-                          ),
-                          _ManagementCard(
-                            title: 'Course Management',
-                            description: 'Manage courses and credits',
-                            icon: Icons.book,
-                            color: Colors.green,
-                            onTap: () => _navigateToManagement('courses'),
-                          ),
-                          _ManagementCard(
-                            title: 'Department Management',
-                            description: 'Manage departments and assignments',
-                            icon: Icons.business,
-                            color: Colors.orange,
-                            onTap: () => _navigateToManagement('departments'),
-                          ),
-                          _ManagementCard(
-                            title: 'Faculty Management',
-                            description: 'Manage faculty and availability',
-                            icon: Icons.school,
-                            color: Colors.purple,
-                            onTap: () => _navigateToManagement('faculty'),
-                          ),
-                          _ManagementCard(
-                            title: 'Hall Management',
-                            description:
-                                'Manage halls, seating arrangements and availability',
-                            icon: Icons.meeting_room,
-                            color: Colors.teal,
-                            onTap: () => _navigateToManagement('halls'),
-                          ),
-                          _ManagementCard(
-                            title: 'Exam Management',
-                            description: 'Manage exams and schedules',
-                            icon: Icons.assignment,
-                            color: Colors.pink,
-                            onTap: () => _navigateToManagement('exams'),
-                          ),
-                          _ManagementCard(
-                            title: 'Seating Arrangement',
-                            description:
-                                'Generate and manage exam seating arrangements',
-                            icon: Icons.event_seat,
-                            color: Colors.amber,
-                            onTap: () => _navigateToManagement('seating'),
-                          ),
-                        ]
-                            .map((card) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 8.0),
-                                  child: card,
-                                ))
-                            .toList(),
-                      )
-                    else
-                      GridView.count(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisCount: 3,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                        childAspectRatio: 1.2,
-                        children: [
-                          _ManagementCard(
-                            title: 'Student Management',
-                            description:
-                                'Manage student records and course registrations',
-                            icon: Icons.people,
-                            color: Colors.blue,
-                            onTap: () => _navigateToManagement('students'),
-                          ),
-                          _ManagementCard(
-                            title: 'Course Management',
-                            description:
-                                'Manage courses, credits, and departments',
-                            icon: Icons.book,
-                            color: Colors.green,
-                            onTap: () => _navigateToManagement('courses'),
-                          ),
-                          _ManagementCard(
-                            title: 'Department Management',
-                            description:
-                                'Manage departments and faculty assignments',
-                            icon: Icons.business,
-                            color: Colors.orange,
-                            onTap: () => _navigateToManagement('departments'),
-                          ),
-                          _ManagementCard(
-                            title: 'Faculty Management',
-                            description:
-                                'Manage faculty members and their availability',
-                            icon: Icons.school,
-                            color: Colors.purple,
-                            onTap: () => _navigateToManagement('faculty'),
-                          ),
-                          _ManagementCard(
-                            title: 'Hall Management',
-                            description:
-                                'Manage halls, seating arrangements and availability',
-                            icon: Icons.meeting_room,
-                            color: Colors.teal,
-                            onTap: () => _navigateToManagement('halls'),
-                          ),
-                          _ManagementCard(
-                            title: 'Exam Management',
-                            description: 'Manage exams and schedules',
-                            icon: Icons.assignment,
-                            color: Colors.pink,
-                            onTap: () => _navigateToManagement('exams'),
-                          ),
-                          _ManagementCard(
-                            title: 'Seating Arrangement',
-                            description:
-                                'Generate and manage exam seating arrangements',
-                            icon: Icons.event_seat,
-                            color: Colors.amber,
-                            onTap: () => _navigateToManagement('seating'),
-                          ),
-                        ],
-                      ),
-                  ],
-                ),
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
             ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            value.toString(),
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUpcomingEvent(
+    String title,
+    String subtitle,
+    String time,
+    IconData icon,
+    Color color,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                ),
+                Text(
+                  time,
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w500,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -788,217 +1181,8 @@ class _SuperintendentDashboardPageState
   }
 }
 
-class _DashboardCard extends StatelessWidget {
-  final String title;
-  final String value;
-  final IconData icon;
-  final Color color;
-  final VoidCallback? onTap;
-
-  const _DashboardCard({
-    required this.title,
-    required this.value,
-    required this.icon,
-    required this.color,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final screenSize = MediaQuery.of(context).size;
-    final isSmallScreen = screenSize.width < 600;
-
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      elevation: 2,
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          width: isSmallScreen ? double.infinity : 200,
-          padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                color.withOpacity(0.1),
-                Colors.white,
-              ],
-            ),
-            border: Border(
-              left: BorderSide(color: color, width: 4),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: color, size: isSmallScreen ? 24 : 28),
-              const SizedBox(height: 8),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: isSmallScreen ? 28 : 32,
-                    fontWeight: FontWeight.bold,
-                    color: color,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: isSmallScreen ? 13 : 14,
-                  color: Colors.grey[700],
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ManagementCard extends StatelessWidget {
-  final String title;
-  final String description;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _ManagementCard({
-    required this.title,
-    required this.description,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isSmallScreen = MediaQuery.of(context).size.width < 600;
-
-    if (isSmallScreen) {
-      return Card(
-        elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: color, width: 2),
-        ),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(icon, size: 24, color: color),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        description,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  Icons.chevron_right,
-                  color: color.withOpacity(0.5),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Card(
-      elevation: 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: color, width: 2),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                color.withOpacity(0.05),
-                Colors.white,
-              ],
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(icon, size: 32, color: color),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  description,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[600],
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+extension StringExtension on String {
+  String capitalize() {
+    return "${this[0].toUpperCase()}${substring(1)}";
   }
 }

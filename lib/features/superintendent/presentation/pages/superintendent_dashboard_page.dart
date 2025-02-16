@@ -305,20 +305,34 @@ class _SuperintendentDashboardPageState
 
   Future<void> _signOut(BuildContext context) async {
     try {
+      setState(() => isLoading = true);
+      // Clear any stored session/auth data
       await Supabase.instance.client.auth.signOut();
+      await Supabase.instance.client.auth.refreshSession();
+
       if (context.mounted) {
-        // Navigate to login page and remove all previous routes
-        Navigator.of(context)
+        // Force navigation to login and clear all routes
+        await Navigator.of(context)
             .pushNamedAndRemoveUntil('/login', (route) => false);
+        // Additional cleanup
+        setState(() {
+          _currentSection = 'dashboard';
+          notifications.clear();
+          stats.clear();
+        });
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Error signing out'),
+          SnackBar(
+            content: Text('Error signing out: $e'),
             backgroundColor: Colors.red,
           ),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => isLoading = false);
       }
     }
   }
@@ -331,7 +345,7 @@ class _SuperintendentDashboardPageState
     return Scaffold(
       appBar: isSmallScreen
           ? AppBar(
-        title: const Text('Superintendent Dashboard'),
+              title: const Text('Superintendent Dashboard'),
               elevation: 0,
               backgroundColor: Colors.transparent,
               foregroundColor: Theme.of(context).colorScheme.onSurface,
@@ -358,44 +372,44 @@ class _SuperintendentDashboardPageState
                             Align(
                               alignment: Alignment.topRight,
                               child: Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.notifications),
-                onPressed: () => _showNotificationsDialog(),
-              ),
-              if (notifications
-                  .where((n) => n['status'] == 'pending')
-                  .isNotEmpty)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.notifications),
+                                    onPressed: () => _showNotificationsDialog(),
+                                  ),
+                                  if (notifications
+                                      .where((n) => n['status'] == 'pending')
+                                      .isNotEmpty)
+                                    Positioned(
+                                      right: 8,
+                                      top: 8,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red,
                                           borderRadius:
                                               BorderRadius.circular(10),
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 16,
-                      minHeight: 16,
-                    ),
-                    child: Text(
-                      notifications
+                                        ),
+                                        constraints: const BoxConstraints(
+                                          minWidth: 16,
+                                          minHeight: 16,
+                                        ),
+                                        child: Text(
+                                          notifications
                                               .where((n) =>
                                                   n['status'] == 'pending')
-                          .length
-                          .toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
+                                              .length
+                                              .toString(),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
                           // Welcome Section with Quick Stats
                           Container(
@@ -410,15 +424,15 @@ class _SuperintendentDashboardPageState
                                 ],
                               ),
                               borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
                                 const Text(
                                   'Welcome, Superintendent',
-                        style: TextStyle(
+                                  style: TextStyle(
                                     fontSize: 28,
-                          fontWeight: FontWeight.bold,
+                                    fontWeight: FontWeight.bold,
                                     color: Colors.white,
                                   ),
                                 ),
@@ -488,12 +502,12 @@ class _SuperintendentDashboardPageState
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(16),
                                   ),
-                      child: Padding(
+                                  child: Padding(
                                     padding: const EdgeInsets.all(24),
-                        child: Column(
+                                    child: Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
-                          children: [
+                                      children: [
                                         Row(
                                           children: [
                                             Icon(
@@ -562,7 +576,7 @@ class _SuperintendentDashboardPageState
                                                     notification['status']
                                                             ?.toUpperCase() ??
                                                         'PENDING',
-                        style: TextStyle(
+                                                    style: TextStyle(
                                                       color: notification[
                                                                   'status'] ==
                                                               'pending'
@@ -609,9 +623,9 @@ class _SuperintendentDashboardPageState
                                                 'Upcoming Events',
                                                 style: TextStyle(
                                                   fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
                                             ],
                                           ),
                                           const SizedBox(height: 16),
@@ -622,8 +636,8 @@ class _SuperintendentDashboardPageState
                                             'Tomorrow, 9:00 AM',
                                             Icons.assignment,
                                             Colors.blue,
-                    ),
-                    const SizedBox(height: 12),
+                                          ),
+                                          const SizedBox(height: 12),
                                           _buildUpcomingEvent(
                                             'Faculty Meeting',
                                             'Department Heads',
@@ -671,7 +685,7 @@ class _SuperintendentDashboardPageState
       width: 280,
       color: Theme.of(context).colorScheme.primary,
       child: Column(
-                        children: [
+        children: [
           // Profile Section
           Container(
             width: double.infinity,
@@ -796,9 +810,9 @@ class _SuperintendentDashboardPageState
                               ),
                             ),
                           ),
-                      ),
-                  ],
-                ),
+                        ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -984,7 +998,7 @@ class _SuperintendentDashboardPageState
             ),
           ),
         ],
-            ),
+      ),
     );
   }
 

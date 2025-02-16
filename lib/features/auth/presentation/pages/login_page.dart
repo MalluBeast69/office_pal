@@ -17,7 +17,7 @@ class LoginPage extends ConsumerStatefulWidget {
 }
 
 class _LoginPageState extends ConsumerState<LoginPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
   bool _isObscured = true;
@@ -25,9 +25,11 @@ class _LoginPageState extends ConsumerState<LoginPage>
   final _idController = TextEditingController();
   final _passwordController = TextEditingController();
   late AnimationController _animationController;
+  late AnimationController _gradientController;
   late Animation<double> _rotationAnimation;
   late Animation<double> _scaleAnimation;
   late Animation<double> _slideAnimation;
+  late Animation<double> _gradientAnimation;
   bool _isHoveringStudent = false;
   bool _isHoveringFaculty = false;
   bool _isIdFieldFocused = false;
@@ -36,10 +38,17 @@ class _LoginPageState extends ConsumerState<LoginPage>
   @override
   void initState() {
     super.initState();
+    // Main animation controller for one-time animations
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
+
+    // Separate controller for looping gradient
+    _gradientController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 15000),
+    )..repeat();
 
     _rotationAnimation = Tween<double>(
       begin: 0,
@@ -71,6 +80,11 @@ class _LoginPageState extends ConsumerState<LoginPage>
       ),
     );
 
+    _gradientAnimation = Tween<double>(
+      begin: 0.0,
+      end: 2 * math.pi,
+    ).animate(_gradientController);
+
     _animationController.forward();
   }
 
@@ -79,6 +93,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
     _idController.dispose();
     _passwordController.dispose();
     _animationController.dispose();
+    _gradientController.dispose();
     super.dispose();
   }
 
@@ -216,26 +231,21 @@ class _LoginPageState extends ConsumerState<LoginPage>
     return Scaffold(
       body: Stack(
         children: [
-          // Background gradient
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                  Theme.of(context).colorScheme.secondary.withOpacity(0.1),
-                ],
-              ),
-            ),
-          ),
-          // Animated background patterns
-          Positioned.fill(
-            child: CustomPaint(
-              painter: BackgroundPatternPainter(
-                color: Theme.of(context).colorScheme.primary.withOpacity(0.05),
-              ),
-            ),
+          // Animated gradient background
+          AnimatedBuilder(
+            animation: _gradientAnimation,
+            builder: (context, child) {
+              return CustomPaint(
+                painter: AnimatedGradientPainter(
+                  animation: _gradientAnimation.value,
+                  colorOne:
+                      Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                  colorTwo:
+                      Theme.of(context).colorScheme.tertiary.withOpacity(0.3),
+                ),
+                size: MediaQuery.of(context).size,
+              );
+            },
           ),
           // Main content
           Center(
@@ -763,4 +773,48 @@ class BackgroundPatternPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class AnimatedGradientPainter extends CustomPainter {
+  final double animation;
+  final Color colorOne;
+  final Color colorTwo;
+
+  AnimatedGradientPainter({
+    required this.animation,
+    required this.colorOne,
+    required this.colorTwo,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment(
+          math.cos(animation) * 1.5,
+          math.sin(animation) * 1.5,
+        ),
+        end: Alignment(
+          math.cos(animation + math.pi) * 1.5,
+          math.sin(animation + math.pi) * 1.5,
+        ),
+        colors: [
+          colorOne,
+          colorOne.withOpacity(0.6),
+          colorTwo,
+          colorTwo.withOpacity(0.6),
+          colorOne,
+        ],
+        stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
+      ).createShader(Offset.zero & size);
+
+    canvas.drawRect(Offset.zero & size, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant AnimatedGradientPainter oldDelegate) {
+    return animation != oldDelegate.animation ||
+        colorOne != oldDelegate.colorOne ||
+        colorTwo != oldDelegate.colorTwo;
+  }
 }

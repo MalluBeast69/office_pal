@@ -152,7 +152,7 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
     try {
       setState(() => _isLoading = true);
 
-      developer.log('=== Seating Arrangement Summary ===');
+      developer.log('\n=== Starting Seating Arrangement Generation ===');
       developer.log(
           'Total Students to be Seated: ${widget.selectedStudents.length}');
 
@@ -169,16 +169,30 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
         hallsByDateAndSession[date]![session]!.add(hall);
       }
 
+      developer.log('\nHall Distribution:');
+      hallsByDateAndSession.forEach((date, sessions) {
+        developer.log('Date: $date');
+        sessions.forEach((session, halls) {
+          developer.log('  Session: $session');
+          developer
+              .log('  Halls: ${halls.map((h) => h['hall_id']).join(', ')}');
+        });
+      });
+
       // Track all unassigned students across all sessions
       final allUnassignedStudents = <Map<String, dynamic>>[];
+      final allAssignedStudents = <String>{};
+      final totalSeatedByHall = <String, int>{};
 
       // Process each date
       for (final date in hallsByDateAndSession.keys) {
         _seatingArrangements[date] ??= {};
+        developer.log('\nProcessing Date: $date');
 
         // Process each session
         for (final session in hallsByDateAndSession[date]!.keys) {
           _seatingArrangements[date]![session] ??= {};
+          developer.log('\n  Processing Session: $session');
 
           // Get exams for this session
           final examsForSession = widget.exams
@@ -187,6 +201,9 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                   e['exam_date'].toString().split(' ')[0] == date)
               .toList();
 
+          developer.log(
+              '  Exams in this session: ${examsForSession.map((e) => e['course_id']).join(', ')}');
+
           // Get all students for this session's exams
           final studentsForSession = <Map<String, dynamic>>[];
           for (final exam in examsForSession) {
@@ -194,7 +211,12 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
             final examStudents =
                 _students.where((s) => s['course_code'] == courseId).toList();
             studentsForSession.addAll(examStudents);
+            developer
+                .log('    Course $courseId: ${examStudents.length} students');
           }
+
+          developer
+              .log('  Total students in session: ${studentsForSession.length}');
 
           // Sort halls by capacity (largest first)
           final availableHalls = hallsByDateAndSession[date]![session]!
@@ -207,22 +229,39 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
           var totalCapacityNeeded = studentsForSession.length;
           var currentCapacity = 0;
 
+          developer.log('\n  Hall Selection:');
+          developer.log('  Total capacity needed: $totalCapacityNeeded');
+
           // Select only needed halls
           for (final hall in availableHalls) {
             if (remainingStudents.isEmpty ||
-                currentCapacity >= totalCapacityNeeded) break;
+                currentCapacity >= totalCapacityNeeded) {
+              developer.log(
+                  '  Sufficient capacity reached. Stopping hall selection.');
+              break;
+            }
 
             final effectiveCapacity = calculateEffectiveHallCapacity(hall);
+            developer.log(
+                '  Evaluating Hall ${hall['hall_id']}: Effective capacity = $effectiveCapacity');
+
             if (effectiveCapacity > 0) {
               selectedHalls.add(hall);
               currentCapacity += effectiveCapacity;
+              developer.log(
+                  '  Selected Hall ${hall['hall_id']}. Current total capacity: $currentCapacity');
             }
           }
 
-          // Process selected halls
+          developer.log('\n  Selected Halls for Processing:');
+          developer.log(
+              '  Halls: ${selectedHalls.map((h) => h['hall_id']).join(', ')}');
+
+          // Process only selected halls
           for (final hall in selectedHalls) {
             final hallId = hall['hall_id'].toString();
             _seatingArrangements[date]![session]![hallId] = [];
+            developer.log('\n    Processing Hall: $hallId');
 
             final rows = hall['no_of_rows'] as int;
             final cols = hall['no_of_columns'] as int;
@@ -231,36 +270,23 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
               (_) => List<String?>.filled(cols, null, growable: false),
             );
 
-            // Sort exams by number of students (largest first)
-            examsForSession.sort((a, b) {
-              final aCount = remainingStudents
-                  .where((s) => s['course_code'] == a['course_id'])
-                  .length;
-              final bCount = remainingStudents
-                  .where((s) => s['course_code'] == b['course_id'])
-                  .length;
-              return bCount.compareTo(aCount);
-            });
+            var seatedInThisHall = 0;
+            var uniqueStudentsInHall = <String>{};
 
-            // Assign seats using spiral pattern
+            // Process each exam's students
             for (final exam in examsForSession) {
               final courseId = exam['course_id'] as String;
               final examId = exam['exam_id'] as String;
 
-              // Get unassigned students for this exam
-              final examStudents = remainingStudents
-                  .where((s) => s['course_code'] == courseId)
+              final examStudents = studentsForSession
+                  .where((s) =>
+                      s['course_code'] == courseId &&
+                      !allAssignedStudents.contains(s['student_reg_no']))
                   .toList();
 
-              // Sort by regular/supplementary
-              examStudents.sort((a, b) {
-                if (a['is_supplementary'] != b['is_supplementary']) {
-                  return a['is_supplementary'] ? 1 : -1;
-                }
-                return 0;
-              });
+              developer.log(
+                  '      Course $courseId: Attempting to seat ${examStudents.length} students');
 
-              // Try to assign seats
               for (var i = 0; i < rows; i++) {
                 for (var j = 0; j < cols; j++) {
                   if (examStudents.isEmpty) break;
@@ -276,42 +302,52 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
 
                     _seatingArrangements[date]![session]![hallId]!
                         .add(studentWithSeat);
-                    remainingStudents.remove(student);
+                    allAssignedStudents.add(student['student_reg_no']);
+                    uniqueStudentsInHall.add(student['student_reg_no']);
+                    seatedInThisHall++;
                   }
                 }
                 if (examStudents.isEmpty) break;
               }
             }
-          }
 
-          // Add any unassigned students to the tracking list
-          if (remainingStudents.isNotEmpty) {
-            allUnassignedStudents.addAll(remainingStudents);
+            totalSeatedByHall[hallId] = seatedInThisHall;
+            developer
+                .log('      Seated in this hall: $seatedInThisHall students');
+            developer.log(
+                '      Unique students in hall: ${uniqueStudentsInHall.length}');
           }
         }
       }
 
-      // Calculate total seated students
-      final seatedStudents = <String>{}; // Using a Set to count unique students
-      _seatingArrangements.forEach((date, sessions) {
-        sessions.forEach((session, halls) {
-          halls.forEach((hall, students) {
-            for (final student in students) {
-              seatedStudents.add(student['student_reg_no'] as String);
-            }
-          });
-        });
+      developer.log('\n=== Final Seating Summary ===');
+      developer
+          .log('Total Students to Seat: ${widget.selectedStudents.length}');
+      developer.log(
+          'Total Seats Assigned: ${totalSeatedByHall.values.fold(0, (sum, count) => sum + count)}');
+      developer.log('Unique Students Seated: ${allAssignedStudents.length}');
+
+      developer.log('\nBreakdown by Hall:');
+      totalSeatedByHall.forEach((hallId, count) {
+        developer.log('  Hall $hallId: $count students');
       });
 
-      // Log final summary
-      developer.log('\nSeating Arrangement Results:');
-      developer.log('Total Students: ${widget.selectedStudents.length}');
-      developer.log('Successfully Seated: ${seatedStudents.length}');
+      // Clean up empty halls
+      for (final date in _seatingArrangements.keys.toList()) {
+        for (final session in _seatingArrangements[date]!.keys.toList()) {
+          for (final hallId
+              in _seatingArrangements[date]![session]!.keys.toList()) {
+            if (_seatingArrangements[date]![session]![hallId]!.isEmpty) {
+              developer.log('  Removing empty hall: $hallId');
+              _seatingArrangements[date]![session]!.remove(hallId);
+            }
+          }
+        }
+      }
 
       if (allUnassignedStudents.isNotEmpty) {
         developer.log(
             '\nWARNING: ${allUnassignedStudents.length} students could not be seated:');
-        // Group unassigned students by course for better readability
         final unassignedByCourse = <String, List<String>>{};
         for (final student in allUnassignedStudents) {
           final courseId = student['course_code'] as String;
@@ -320,23 +356,10 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
               .add(student['student_reg_no'] as String);
         }
 
-        // Log unassigned students grouped by course
         unassignedByCourse.forEach((courseId, students) {
-          developer.log('\nCourse: $courseId');
-          developer.log('Unassigned Students: ${students.join(", ")}');
+          developer.log('  Course: $courseId');
+          developer.log('  Unassigned Students: ${students.join(", ")}');
         });
-
-        // Show warning in UI
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                  'Warning: ${allUnassignedStudents.length} students could not be seated. Check logs for details.'),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 5),
-            ),
-          );
-        }
       }
     } catch (error) {
       developer.log('Error in seating generation: $error');
@@ -1232,6 +1255,69 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                                                       ],
                                                     ),
                                                   ),
+                                                  if (students
+                                                      .isEmpty) // Only show delete option for empty halls
+                                                    IconButton(
+                                                      icon: const Icon(
+                                                          Icons.delete_outline),
+                                                      tooltip:
+                                                          'Remove empty hall',
+                                                      onPressed: () {
+                                                        showDialog(
+                                                          context: context,
+                                                          builder: (context) =>
+                                                              AlertDialog(
+                                                            title: const Text(
+                                                                'Remove Empty Hall'),
+                                                            content: Text(
+                                                                'Are you sure you want to remove Hall $hallId from the arrangement?'),
+                                                            actions: [
+                                                              TextButton(
+                                                                onPressed: () =>
+                                                                    Navigator.pop(
+                                                                        context),
+                                                                child: const Text(
+                                                                    'Cancel'),
+                                                              ),
+                                                              FilledButton(
+                                                                onPressed: () {
+                                                                  setState(() {
+                                                                    if (_selectedDate !=
+                                                                            null &&
+                                                                        _selectedSession !=
+                                                                            null) {
+                                                                      final date = DateFormat(
+                                                                              'yyyy-MM-dd')
+                                                                          .format(
+                                                                              _selectedDate!);
+                                                                      _seatingArrangements[date]![
+                                                                              _selectedSession]!
+                                                                          .remove(
+                                                                              hallId);
+                                                                    }
+                                                                  });
+                                                                  Navigator.pop(
+                                                                      context);
+                                                                  ScaffoldMessenger.of(
+                                                                          context)
+                                                                      .showSnackBar(
+                                                                    SnackBar(
+                                                                      content: Text(
+                                                                          'Hall $hallId removed from arrangement'),
+                                                                      duration: const Duration(
+                                                                          seconds:
+                                                                              2),
+                                                                    ),
+                                                                  );
+                                                                },
+                                                                child: const Text(
+                                                                    'Remove'),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        );
+                                                      },
+                                                    ),
                                                 ],
                                               ),
                                             ),
@@ -1474,6 +1560,8 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
     try {
       setState(() => _isLoading = true);
 
+      developer.log('\n=== Starting PDF Generation ===');
+
       // Create PDF document
       final pdf = pw.Document();
 
@@ -1495,15 +1583,20 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
               }
             };
 
+      developer.log('Arrangements to process:');
+      developer.log('Total dates: ${arrangementsToProcess.length}');
+
       // Group arrangements by date and session
       final arrangementsByDateAndSession =
           <String, Map<String, Map<String, List<Map<String, dynamic>>>>>{};
 
       for (final date in arrangementsToProcess.keys) {
+        developer.log('\nProcessing date: $date');
         final sessions = arrangementsToProcess[date]!;
         arrangementsByDateAndSession[date] = {};
 
         for (final session in sessions.keys) {
+          developer.log('  Processing session: $session');
           final halls = sessions[session]!;
           arrangementsByDateAndSession[date]![session] = {};
 
@@ -1511,6 +1604,7 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
           for (final hallId in halls.keys) {
             final students = halls[hallId]!;
             arrangementsByDateAndSession[date]![session]![hallId] = students;
+            developer.log('    Hall $hallId: ${students.length} students');
           }
         }
       }
@@ -1518,16 +1612,27 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
       // Process each date and session
       for (final date in arrangementsByDateAndSession.keys) {
         final sessions = arrangementsByDateAndSession[date]!;
+        developer.log('\nGenerating PDF pages for date: $date');
 
         for (final session in sessions.keys) {
           final halls = sessions[session]!;
-          if (halls.isEmpty) continue;
+          if (halls.isEmpty) {
+            developer.log('  No halls for session: $session');
+            continue;
+          }
+
+          developer.log('  Generating pages for session: $session');
+          developer.log('  Number of halls: ${halls.length}');
 
           final examsInSession = widget.exams
               .where((e) =>
                   e['exam_date'].toString().split(' ')[0] == date &&
                   e['session'] == session)
               .toList();
+
+          developer.log('  Exams in session: ${examsInSession.length}');
+          developer.log(
+              '  Exam details: ${examsInSession.map((e) => '${e['course_id']} - ${e['course_name']}').join(', ')}');
 
           // Add page for this date and session (containing all halls)
           pdf.addPage(
@@ -1536,6 +1641,7 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
               margin: const pw.EdgeInsets.all(20),
               build: (context) {
                 final pages = <pw.Widget>[];
+                developer.log('  Building PDF page content');
 
                 // Header section
                 pages.add(
@@ -1581,16 +1687,40 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                 // Process each hall vertically
                 for (final hallId in halls.keys) {
                   final students = halls[hallId]!;
-                  final hall = _halls.firstWhere((h) => h['hall_id'] == hallId);
+                  developer.log(
+                      '    Processing hall $hallId with ${students.length} students');
+
+                  final hall = _halls.firstWhere(
+                    (h) => h['hall_id'] == hallId,
+                    orElse: () {
+                      developer
+                          .log('    ERROR: Hall $hallId not found in _halls!');
+                      return {
+                        'hall_id': hallId,
+                        'no_of_rows': 0,
+                        'no_of_columns': 0
+                      };
+                    },
+                  );
+
                   final rows = hall['no_of_rows'] as int;
                   final cols = hall['no_of_columns'] as int;
+                  developer.log('    Hall dimensions: ${rows}x$cols');
+
+                  if (rows == 0 || cols == 0) {
+                    developer
+                        .log('    ERROR: Invalid hall dimensions for $hallId');
+                    continue;
+                  }
 
                   // Calculate optimal cell dimensions
                   final pageWidth = PdfPageFormat.a4.availableWidth - 40;
-                  final cellWidth = pageWidth / cols;
-                  final cellHeight =
-                      math.min(30.0, 400 / rows); // Compact layout
-                  final double cellPadding = cellWidth < 30 ? 2.0 : 4.0;
+                  final cellWidth = math.min(30.0, pageWidth / cols);
+                  final cellHeight = math.min(25.0, 400 / rows);
+                  final cellPadding = 2.0;
+
+                  developer.log(
+                      '    Cell dimensions: ${cellWidth}x$cellHeight, padding: $cellPadding');
 
                   // Hall header
                   pages.add(
@@ -1603,8 +1733,7 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                       child: pw.Row(
                         mainAxisAlignment: pw.MainAxisAlignment.center,
                         children: [
-                          pw.Text('Hall: ${hall['hall_id']}',
-                              style: headerStyle),
+                          pw.Text('Hall: $hallId', style: headerStyle),
                         ],
                       ),
                     ),
@@ -1622,6 +1751,11 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                         );
                         final seatNumber = row * cols + col + 1;
 
+                        if (student.isNotEmpty) {
+                          developer.log(
+                              'Cell content for S$seatNumber: ${student['student_reg_no']}');
+                        }
+
                         return pw.Container(
                           height: cellHeight,
                           width: cellWidth,
@@ -1633,18 +1767,26 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                             mainAxisAlignment: pw.MainAxisAlignment.center,
                             crossAxisAlignment: pw.CrossAxisAlignment.center,
                             children: [
-                              pw.Text(
-                                'S$seatNumber',
-                                style: smallStyle,
-                                textAlign: pw.TextAlign.center,
-                              ),
+                              pw.Text('S$seatNumber', style: smallStyle),
                               if (student.isNotEmpty) ...[
-                                pw.SizedBox(height: cellHeight > 20 ? 2 : 1),
+                                pw.SizedBox(height: 1),
                                 pw.Text(
                                   student['student_reg_no'].toString(),
                                   style: normalStyle,
                                   textAlign: pw.TextAlign.center,
                                 ),
+                                pw.SizedBox(height: 1),
+                                pw.Text(
+                                  student['course_code'].toString(),
+                                  style: smallStyle,
+                                  textAlign: pw.TextAlign.center,
+                                ),
+                                if (student['is_supplementary'] == true)
+                                  pw.Text(
+                                    '(S)',
+                                    style: smallStyle,
+                                    textAlign: pw.TextAlign.center,
+                                  ),
                               ],
                             ],
                           ),
@@ -1659,14 +1801,44 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                       child: pw.Table(
                         border: pw.TableBorder.all(width: 0.5),
                         defaultColumnWidth: pw.FixedColumnWidth(cellWidth),
-                        children: tableRows,
+                        children: [
+                          // Add faculty info row
+                          pw.TableRow(
+                            children: [
+                              pw.Container(
+                                padding: const pw.EdgeInsets.all(5),
+                                decoration: const pw.BoxDecoration(
+                                  color: PdfColors.grey200,
+                                ),
+                                child: pw.Column(
+                                  crossAxisAlignment:
+                                      pw.CrossAxisAlignment.start,
+                                  children: [
+                                    pw.Text(
+                                      'Faculty: ${_faculty.firstWhere(
+                                        (f) =>
+                                            f['faculty_id'] ==
+                                            widget.hallFacultyMap[
+                                                '$hallId|$session|$date'],
+                                        orElse: () =>
+                                            {'faculty_name': 'Not Assigned'},
+                                      )['faculty_name']}',
+                                      style: normalStyle,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              ...List.generate(cols - 1, (_) => pw.Container()),
+                            ],
+                          ),
+                          ...tableRows,
+                        ],
                       ),
                     ),
                   );
-
-                  pages.add(pw.SizedBox(height: 16));
                 }
 
+                developer.log('  Finished building page content');
                 return pages;
               },
             ),
@@ -1674,8 +1846,10 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
         }
       }
 
-      // Save PDF and handle download based on platform
+      developer.log('\nSaving PDF document');
       final bytes = await pdf.save();
+      developer.log('PDF document saved, size: ${bytes.length} bytes');
+
       final filename = printAll
           ? 'seating_arrangement_all_${DateFormat('yyyy_MM_dd').format(DateTime.now())}.pdf'
           : 'seating_arrangement_${DateFormat('yyyy_MM_dd').format(_selectedDate!)}_$_selectedSession.pdf';
@@ -1692,23 +1866,28 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
         anchor.click();
         html.document.body?.children.remove(anchor);
         html.Url.revokeObjectUrl(url);
+        developer.log('PDF downloaded in web platform');
       } else {
         // Mobile/Desktop platforms: Use path_provider
         final output = await getTemporaryDirectory();
         final file = File('${output.path}/$filename');
         await file.writeAsBytes(bytes);
+        developer.log('PDF saved to: ${file.path}');
 
         final uri = Uri.file(file.path);
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri);
+          developer.log('PDF opened in default viewer');
         } else {
           throw 'Could not open the PDF file';
         }
       }
 
+      developer.log('=== PDF Generation Complete ===');
       setState(() => _isLoading = false);
-    } catch (error) {
-      developer.log('Error generating PDF: $error');
+    } catch (error, stackTrace) {
+      developer.log('Error generating PDF:',
+          error: error, stackTrace: stackTrace);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

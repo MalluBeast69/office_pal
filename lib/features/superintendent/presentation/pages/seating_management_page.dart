@@ -1830,7 +1830,7 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
     try {
       setState(() => _isLoading = true);
 
-      // Create PDF document
+      developer.log('Starting PDF generation...');
       final pdf = pw.Document();
 
       // Define consistent cell size and styling
@@ -1845,8 +1845,10 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
       final arrangementsByDateAndSession =
           <String, Map<String, Map<String, List<Map<String, dynamic>>>>>{};
 
+      developer.log('Processing arrangements...');
       for (final hallId in _seatingArrangements.keys) {
         final hallArrangements = _seatingArrangements[hallId]!;
+        developer.log('Processing hall: $hallId');
 
         for (final date in hallArrangements.keys) {
           arrangementsByDateAndSession[date] ??= {};
@@ -1865,10 +1867,13 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
       // Process each date and session
       for (final date in arrangementsByDateAndSession.keys) {
         final sessions = arrangementsByDateAndSession[date]!;
+        developer.log('Processing date: $date');
 
         for (final session in sessions.keys) {
           final halls = sessions[session]!;
           if (halls.isEmpty) continue;
+
+          developer.log('Processing session: $session');
 
           // Get all unique exams for this session
           final examsInSession = halls.values
@@ -1883,7 +1888,7 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
           examsInSession.sort((a, b) =>
               (a['course_id'] as String).compareTo(b['course_id'] as String));
 
-          // Add page for this date and session (containing all halls)
+          // Add page for this date and session
           pdf.addPage(
             pw.MultiPage(
               pageFormat: PdfPageFormat.a4,
@@ -1934,15 +1939,24 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                     (h) => h['hall_id'] == hallId,
                     orElse: () => throw Exception('Hall $hallId not found'),
                   );
+
+                  developer.log('Processing hall in PDF: $hallId');
+
                   final rows = hall['no_of_rows'] as int;
                   final cols = hall['no_of_columns'] as int;
 
                   // Calculate optimal cell dimensions
                   final pageWidth = PdfPageFormat.a4.availableWidth - 40;
-                  final cellWidth = pageWidth / cols;
-                  final cellHeight =
-                      math.min(30.0, 400 / rows); // Compact layout
-                  final double cellPadding = cellWidth < 30 ? 2.0 : 4.0;
+                  final cellWidth = math.min(
+                    pageWidth / cols,
+                    30.0, // Maximum cell width
+                  );
+                  final cellHeight = math.min(
+                    25.0,
+                    400 / rows, // Adjust based on available height
+                  );
+
+                  developer.log('Cell dimensions: $cellWidth x $cellHeight');
 
                   // Hall header
                   pages.add(
@@ -1964,7 +1978,8 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
 
                   pages.add(pw.SizedBox(height: 8));
 
-                  // Create seating grid
+                  // Create seating grid with error handling
+                  try {
                   final tableRows = List<pw.TableRow>.generate(rows, (row) {
                     return pw.TableRow(
                       children: List<pw.Widget>.generate(cols, (col) {
@@ -1978,7 +1993,7 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                         return pw.Container(
                           height: cellHeight,
                           width: cellWidth,
-                          padding: pw.EdgeInsets.all(cellPadding),
+                            padding: const pw.EdgeInsets.all(2),
                           decoration: pw.BoxDecoration(
                             border: pw.Border.all(width: 0.5),
                           ),
@@ -1992,7 +2007,7 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                                 textAlign: pw.TextAlign.center,
                               ),
                               if (student.isNotEmpty) ...[
-                                pw.SizedBox(height: cellHeight > 20 ? 2 : 1),
+                                  pw.SizedBox(height: 1),
                                 pw.Text(
                                   student['student_reg_no'].toString(),
                                   style: normalStyle,
@@ -2016,6 +2031,16 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                       ),
                     ),
                   );
+                  } catch (e) {
+                    developer.log(
+                        'Error creating seating grid for hall $hallId: $e');
+                    pages.add(
+                      pw.Text(
+                        'Error creating seating grid for hall $hallId',
+                        style: pw.TextStyle(color: PdfColors.red),
+                      ),
+                    );
+                  }
 
                   pages.add(pw.SizedBox(height: 16));
                 }
@@ -2027,11 +2052,11 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
         }
       }
 
-      // Save PDF and handle download based on platform
+      developer.log('Saving PDF...');
       final bytes = await pdf.save();
 
+      developer.log('Handling PDF download/open...');
       if (kIsWeb) {
-        // Web platform: Use blob and download
         final blob = html.Blob([bytes], 'application/pdf');
         final url = html.Url.createObjectUrlFromBlob(blob);
         final anchor = html.document.createElement('a') as html.AnchorElement
@@ -2044,7 +2069,6 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
         html.document.body?.children.remove(anchor);
         html.Url.revokeObjectUrl(url);
       } else {
-        // Mobile/Desktop platforms: Use path_provider
         final output = await getTemporaryDirectory();
         final file = File(
             '${output.path}/seating_arrangements_${DateFormat('yyyy_MM_dd').format(DateTime.now())}.pdf');
@@ -2059,6 +2083,7 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
       }
 
       setState(() => _isLoading = false);
+      developer.log('PDF generation completed successfully');
     } catch (error) {
       developer.log('Error generating PDF: $error');
       if (mounted) {

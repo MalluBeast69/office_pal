@@ -1177,13 +1177,13 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
               onPressed: _deleteSelectedExams,
               tooltip: 'Delete Selected Exams',
             ),
-          IconButton(
-            icon: const Icon(Icons.add),
+          const IconButton(
+            icon: Icon(Icons.add),
             onPressed: null,
             tooltip: 'Add Exam (Controller Only)',
           ),
-          IconButton(
-            icon: const Icon(Icons.upload_file),
+          const IconButton(
+            icon: Icon(Icons.upload_file),
             tooltip: 'Import Excel (Controller Only)',
             onPressed: null,
           ),
@@ -1345,8 +1345,8 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
                         child: DataTable(
                           columnSpacing: 28.0,
                           horizontalMargin: 20.0,
-                          headingRowColor: MaterialStateProperty.all(
-                            Theme.of(context).colorScheme.surfaceVariant,
+                          headingRowColor: WidgetStateProperty.all(
+                            Theme.of(context).colorScheme.surfaceContainerHighest,
                           ),
                           columns: const [
                             DataColumn(label: Text('Exam ID')),
@@ -1412,8 +1412,8 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
                                   Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.edit),
+                                      const IconButton(
+                                        icon: Icon(Icons.edit),
                                         onPressed: null,
                                         tooltip: 'Edit (Controller Only)',
                                       ),

@@ -401,15 +401,15 @@ class _FacultyDashboardPageState extends ConsumerState<FacultyDashboardPage> {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        Row(
+                                        const Row(
                                           children: [
-                                            const Icon(
+                                            Icon(
                                               Icons.upcoming,
                                               color: Colors.white,
                                               size: 28,
                                             ),
-                                            const SizedBox(width: 8),
-                                            const Text(
+                                            SizedBox(width: 8),
+                                            Text(
                                               'Next Duty',
                                               style: TextStyle(
                                                 fontSize: 22,
@@ -661,13 +661,15 @@ class _FacultyDashboardPageState extends ConsumerState<FacultyDashboardPage> {
                               ).animate().fadeIn()
                             else
                               ...leaveRequests.map((request) {
-                                if (request['metadata'] == null)
+                                if (request['metadata'] == null) {
                                   return const SizedBox.shrink();
+                                }
 
                                 final metadata =
                                     jsonDecode(request['metadata'] ?? '{}');
-                                if (metadata == null)
+                                if (metadata == null) {
                                   return const SizedBox.shrink();
+                                }
 
                                 return Card(
                                   margin: const EdgeInsets.only(bottom: 8),
@@ -784,8 +786,9 @@ class _FacultyDashboardPageState extends ConsumerState<FacultyDashboardPage> {
                               ...assignedExams.map((assignment) {
                                 final exam = assignment['exam'];
                                 final hall = assignment['hall'];
-                                if (exam == null || hall == null)
+                                if (exam == null || hall == null) {
                                   return const SizedBox.shrink();
+                                }
 
                                 final examDate = DateTime.parse(
                                     exam['exam_date'] ??

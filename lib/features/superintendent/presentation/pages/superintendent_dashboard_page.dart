@@ -334,7 +334,7 @@ class _SuperintendentDashboardPageState
         title: const Text('Superintendent Dashboard'),
               elevation: 0,
               backgroundColor: Colors.transparent,
-              foregroundColor: Theme.of(context).colorScheme.onBackground,
+              foregroundColor: Theme.of(context).colorScheme.onSurface,
             )
           : null,
       body: Row(

@@ -473,7 +473,7 @@ class _ControllerDashboardPageState
               title: const Text('Controller Dashboard'),
               elevation: 0,
               backgroundColor: Colors.transparent,
-              foregroundColor: Theme.of(context).colorScheme.onBackground,
+              foregroundColor: Theme.of(context).colorScheme.onSurface,
             )
           : null,
       drawer: isSmallScreen ? Drawer(child: _buildSidebar()) : null,

@@ -1946,7 +1946,7 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                         pw.Text(
                             'Date: ${DateFormat('MMM d, y').format(DateTime.parse(date))}',
                             style: normalStyle),
-                        pw.Text('Session: ${session}', style: normalStyle),
+                        pw.Text('Session: $session', style: normalStyle),
                         pw.Text(
                             'Time: ${halls.values.first.first['exam']['time']}',
                             style: normalStyle),
@@ -1969,8 +1969,8 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                   // Calculate cell dimensions
                   final pageWidth = PdfPageFormat.a4.availableWidth - 40;
                   final cellWidth = pageWidth / cols;
-                  final cellHeight = 25.0;
-                  final cellPadding = 2.0;
+                  const cellHeight = 25.0;
+                  const cellPadding = 2.0;
 
                   // Hall header
                   pages.add(
@@ -2647,8 +2647,8 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
         fontSize: 14,
         fontWeight: pw.FontWeight.bold,
       );
-      final normalStyle = pw.TextStyle(fontSize: 10);
-      final smallStyle = pw.TextStyle(fontSize: 8);
+      final normalStyle = const pw.TextStyle(fontSize: 10);
+      final smallStyle = const pw.TextStyle(fontSize: 8);
 
       // Get arrangements for selected date and session
       final dateStr = _selectedDate!.toString().split(' ')[0];
@@ -2845,7 +2845,7 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
       // Save and download PDF
       final bytes = await pdf.save();
       final fileName =
-          'attendance_sheet_${DateFormat('yyyy_MM_dd').format(_selectedDate!)}_${_selectedSession}.pdf';
+          'attendance_sheet_${DateFormat('yyyy_MM_dd').format(_selectedDate!)}_$_selectedSession.pdf';
 
       if (kIsWeb) {
         final blob = html.Blob([bytes], 'application/pdf');

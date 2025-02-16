@@ -354,8 +354,8 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
                   child: SingleChildScrollView(
                     controller: _verticalScrollController,
                     child: DataTable(
-                      headingRowColor: MaterialStateProperty.all(
-                        Theme.of(context).colorScheme.surfaceVariant,
+                      headingRowColor: WidgetStateProperty.all(
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
                       ),
                       columns: const [
                         DataColumn(label: Text('Exam ID')),
@@ -369,7 +369,7 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
                       rows: List.generate(rows.length, (index) {
                         final row = rows[index];
                         return DataRow(
-                          color: MaterialStateProperty.resolveWith((states) {
+                          color: WidgetStateProperty.resolveWith((states) {
                             if (!row.isValid) return Colors.red.shade50;
                             return null;
                           }),
@@ -776,7 +776,7 @@ class _CourseSelectionDialogState extends ConsumerState<CourseSelectionDialog> {
   String? _selectedSemester;
   String? _selectedDepartment;
   String? _selectedCourseType;
-  Set<String> _selectedCourses = {};
+  final Set<String> _selectedCourses = {};
 
   @override
   Widget build(BuildContext context) {

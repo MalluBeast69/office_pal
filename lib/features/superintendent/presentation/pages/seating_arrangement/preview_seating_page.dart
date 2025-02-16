@@ -39,7 +39,7 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
   List<Map<String, dynamic>> _halls = [];
   List<Map<String, dynamic>> _students = [];
   List<Map<String, dynamic>> _faculty = [];
-  Map<String, Map<String, Map<String, List<Map<String, dynamic>>>>>
+  final Map<String, Map<String, Map<String, List<Map<String, dynamic>>>>>
       _seatingArrangements = {};
 
   DateTime? _selectedDate;
@@ -1717,7 +1717,7 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                   final pageWidth = PdfPageFormat.a4.availableWidth - 40;
                   final cellWidth = math.min(30.0, pageWidth / cols);
                   final cellHeight = math.min(25.0, 400 / rows);
-                  final cellPadding = 2.0;
+                  const cellPadding = 2.0;
 
                   developer.log(
                       '    Cell dimensions: ${cellWidth}x$cellHeight, padding: $cellPadding');

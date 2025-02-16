@@ -1613,8 +1613,8 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
                         child: DataTable(
                           columnSpacing: 28.0,
                           horizontalMargin: 20.0,
-                          headingRowColor: MaterialStateProperty.all(
-                            Theme.of(context).colorScheme.surfaceVariant,
+                          headingRowColor: WidgetStateProperty.all(
+                            Theme.of(context).colorScheme.surfaceContainerHighest,
                           ),
                           columns: const [
                             DataColumn(label: Text('Exam ID')),

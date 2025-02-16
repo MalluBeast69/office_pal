@@ -296,11 +296,11 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
-            title: Row(
+            title: const Row(
               children: [
-                const Icon(Icons.error_outline, color: Colors.red),
-                const SizedBox(width: 8),
-                const Text('Validation Errors'),
+                Icon(Icons.error_outline, color: Colors.red),
+                SizedBox(width: 8),
+                Text('Validation Errors'),
               ],
             ),
             content: SingleChildScrollView(
@@ -410,11 +410,11 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
-            title: Row(
+            title: const Row(
               children: [
-                const Icon(Icons.error_outline, color: Colors.red),
-                const SizedBox(width: 8),
-                const Text('Error Creating Exams'),
+                Icon(Icons.error_outline, color: Colors.red),
+                SizedBox(width: 8),
+                Text('Error Creating Exams'),
               ],
             ),
             content: SingleChildScrollView(
@@ -578,8 +578,8 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
                   child: SingleChildScrollView(
                     controller: _verticalScrollController,
                     child: DataTable(
-                      headingRowColor: MaterialStateProperty.all(
-                        Theme.of(context).colorScheme.surfaceVariant,
+                      headingRowColor: WidgetStateProperty.all(
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
                       ),
                       columns: [
                         const DataColumn(label: Text('Exam ID')),
@@ -588,11 +588,11 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
                             children: [
                               const Text('Course'),
                               if (hasProblematicRows)
-                                Tooltip(
+                                const Tooltip(
                                   message:
                                       'Some courses have validation errors',
                                   child: Padding(
-                                    padding: const EdgeInsets.only(left: 4),
+                                    padding: EdgeInsets.only(left: 4),
                                     child: Icon(
                                       Icons.error_outline,
                                       size: 16,
@@ -616,13 +616,14 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
                         }
                         return DataRow(
                           selected: row.isSelected,
-                          color: MaterialStateProperty.resolveWith((states) {
+                          color: WidgetStateProperty.resolveWith((states) {
                             if (!row.isValid) return Colors.red.shade50;
-                            if (states.contains(MaterialState.selected))
+                            if (states.contains(WidgetState.selected)) {
                               return Theme.of(context)
                                   .colorScheme
                                   .primaryContainer
                                   .withOpacity(0.12);
+                            }
                             return null;
                           }),
                           cells: [
@@ -1047,7 +1048,7 @@ class _CourseSelectionDialogState extends ConsumerState<CourseSelectionDialog> {
   String? _selectedSemester;
   String? _selectedDepartment;
   String? _selectedCourseType;
-  Set<String> _selectedCourses = {};
+  final Set<String> _selectedCourses = {};
 
   @override
   Widget build(BuildContext context) {

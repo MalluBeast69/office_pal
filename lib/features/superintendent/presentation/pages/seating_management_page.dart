@@ -1366,7 +1366,7 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
               onSelected: (value) {
                 switch (value) {
                   case 'seating':
-                    _generateAndDownloadPDF();
+                    _generateAndDownloadPDF(printAll: true);
                     break;
                   case 'daily':
                     _generateDailyReport();
@@ -1826,11 +1826,13 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
     );
   }
 
-  Future<void> _generateAndDownloadPDF() async {
+  Future<void> _generateAndDownloadPDF({required bool printAll}) async {
     try {
       setState(() => _isLoading = true);
 
-      developer.log('Starting PDF generation...');
+      developer.log('\n=== Starting PDF Generation ===');
+
+      // Create PDF document
       final pdf = pw.Document();
 
       // Define consistent cell size and styling
@@ -1841,52 +1843,82 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
       const normalStyle = pw.TextStyle(fontSize: 9);
       const smallStyle = pw.TextStyle(fontSize: 7);
 
+      // Fetch seating arrangements from database with proper filtering
+      final query = Supabase.instance.client.from('seating_arr').select('''
+        *,
+        exam (
+          exam_date,
+          session,
+          time,
+          course_id,
+          course (
+            course_name
+          )
+        ),
+        hall (
+          hall_dept,
+          capacity,
+          no_of_rows,
+          no_of_columns
+        ),
+        faculty (
+          faculty_name,
+          dept_id
+        ),
+        student (
+          student_name,
+          dept_id,
+          semester
+        )
+      ''');
+
+      // Apply date and session filters if not printing all
+      if (!printAll && _selectedDate != null && _selectedSession != null) {
+        final currentDate = DateFormat('yyyy-MM-dd').format(_selectedDate!);
+        query
+            .eq('exam.exam_date', currentDate)
+            .eq('exam.session', _selectedSession);
+      }
+
+      final response = await query;
+      final arrangements = List<Map<String, dynamic>>.from(response);
+
+      developer.log('Fetched ${arrangements.length} seating arrangements');
+
       // Group arrangements by date and session
       final arrangementsByDateAndSession =
           <String, Map<String, Map<String, List<Map<String, dynamic>>>>>{};
 
-      developer.log('Processing arrangements...');
-      for (final hallId in _seatingArrangements.keys) {
-        final hallArrangements = _seatingArrangements[hallId]!;
-        developer.log('Processing hall: $hallId');
+      for (final arr in arrangements) {
+        final date = arr['exam']['exam_date'].toString().split('T')[0];
+        final session = arr['exam']['session'] as String;
+        final hallId = arr['hall_id'] as String;
 
-        for (final date in hallArrangements.keys) {
-          arrangementsByDateAndSession[date] ??= {};
-          final arrangements = hallArrangements[date]!;
+        arrangementsByDateAndSession[date] ??= {};
+        arrangementsByDateAndSession[date]![session] ??= {};
+        arrangementsByDateAndSession[date]![session]![hallId] ??= [];
 
-          // Group arrangements by session and hall
-          for (final arr in arrangements) {
-            final session = arr['exam']['session'] as String;
-            arrangementsByDateAndSession[date]![session] ??= {};
-            arrangementsByDateAndSession[date]![session]![hallId] ??= [];
-            arrangementsByDateAndSession[date]![session]![hallId]!.add(arr);
-          }
-        }
+        // Transform to match the expected format
+        final studentData = {
+          'student_reg_no': arr['student_reg_no'],
+          'student': arr['student'],
+          'row_no': arr['row_no'],
+          'column_no': arr['column_no'],
+          'exam': arr['exam'],
+          'hall': arr['hall'],
+          'faculty': arr['faculty']
+        };
+
+        arrangementsByDateAndSession[date]![session]![hallId]!.add(studentData);
       }
 
       // Process each date and session
       for (final date in arrangementsByDateAndSession.keys) {
         final sessions = arrangementsByDateAndSession[date]!;
-        developer.log('Processing date: $date');
 
         for (final session in sessions.keys) {
           final halls = sessions[session]!;
           if (halls.isEmpty) continue;
-
-          developer.log('Processing session: $session');
-
-          // Get all unique exams for this session
-          final examsInSession = halls.values
-              .expand((students) => students)
-              .map((arr) => arr['exam'])
-              .toSet()
-              .toList();
-
-          if (examsInSession.isEmpty) continue;
-
-          // Sort exams by course ID for consistent display
-          examsInSession.sort((a, b) =>
-              (a['course_id'] as String).compareTo(b['course_id'] as String));
 
           // Add page for this date and session
           pdf.addPage(
@@ -1908,23 +1940,16 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                     child: pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
-                        pw.Text(
-                          'Examination Seating Arrangement',
-                          style: headerStyle,
-                        ),
+                        pw.Text('Examination Seating Arrangement',
+                            style: headerStyle),
                         pw.SizedBox(height: 8),
                         pw.Text(
-                          'Date: ${DateFormat('MMMM d, y').format(DateTime.parse(date))}',
-                          style: normalStyle,
-                        ),
+                            'Date: ${DateFormat('MMM d, y').format(DateTime.parse(date))}',
+                            style: normalStyle),
+                        pw.Text('Session: ${session}', style: normalStyle),
                         pw.Text(
-                          'Session: ${_getSessionDisplayName(session)}',
-                          style: normalStyle,
-                        ),
-                        pw.Text(
-                          'Time: ${examsInSession.first['time']}',
-                          style: normalStyle,
-                        ),
+                            'Time: ${halls.values.first.first['exam']['time']}',
+                            style: normalStyle),
                       ],
                     ),
                   ),
@@ -1932,84 +1957,58 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
 
                 pages.add(pw.SizedBox(height: 16));
 
-                // Process each hall vertically
+                // Process each hall
                 for (final hallId in halls.keys) {
                   final students = halls[hallId]!;
-                  final hall = _halls.firstWhere(
-                    (h) => h['hall_id'] == hallId,
-                    orElse: () => throw Exception('Hall $hallId not found'),
-                  );
-
-                  developer.log('Processing hall in PDF: $hallId');
+                  final hall = students.first['hall'];
+                  final faculty = students.first['faculty'];
 
                   final rows = hall['no_of_rows'] as int;
                   final cols = hall['no_of_columns'] as int;
 
-                  // Calculate optimal cell dimensions
+                  // Calculate cell dimensions
                   final pageWidth = PdfPageFormat.a4.availableWidth - 40;
-                  final cellWidth = math.min(
-                    pageWidth / cols,
-                    30.0, // Maximum cell width
-                  );
-                  final cellHeight = math.min(
-                    25.0,
-                    400 / rows, // Adjust based on available height
-                  );
-
-                  developer.log('Cell dimensions: $cellWidth x $cellHeight');
+                  final cellWidth = pageWidth / cols;
+                  final cellHeight = 25.0;
+                  final cellPadding = 2.0;
 
                   // Hall header
                   pages.add(
                     pw.Container(
-                      padding: const pw.EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      color: PdfColors.grey200,
+                      padding: const pw.EdgeInsets.all(5),
+                      decoration:
+                          const pw.BoxDecoration(color: PdfColors.grey200),
                       child: pw.Row(
                         mainAxisAlignment: pw.MainAxisAlignment.center,
                         children: [
-                          pw.Text('Hall: ${hall['hall_id']}',
-                              style: headerStyle),
+                          pw.Text('Hall: $hallId', style: headerStyle),
                         ],
                       ),
                     ),
                   );
 
-                  pages.add(pw.SizedBox(height: 8));
-
-                  // Create seating grid with error handling
-                  try {
+                  // Create seating grid
                   final tableRows = List<pw.TableRow>.generate(rows, (row) {
                     return pw.TableRow(
                       children: List<pw.Widget>.generate(cols, (col) {
                         final student = students.firstWhere(
-                          (arr) =>
-                              arr['row_no'] == row && arr['column_no'] == col,
+                          (s) => s['row_no'] == row && s['column_no'] == col,
                           orElse: () => <String, dynamic>{},
                         );
                         final seatNumber = row * cols + col + 1;
 
                         return pw.Container(
                           height: cellHeight,
-                          width: cellWidth,
-                            padding: const pw.EdgeInsets.all(2),
-                          decoration: pw.BoxDecoration(
-                            border: pw.Border.all(width: 0.5),
-                          ),
+                          padding: const pw.EdgeInsets.all(2),
+                          alignment: pw.Alignment.center,
                           child: pw.Column(
                             mainAxisAlignment: pw.MainAxisAlignment.center,
-                            crossAxisAlignment: pw.CrossAxisAlignment.center,
                             children: [
-                              pw.Text(
-                                'S$seatNumber',
-                                style: smallStyle,
-                                textAlign: pw.TextAlign.center,
-                              ),
+                              pw.Text('S$seatNumber', style: smallStyle),
                               if (student.isNotEmpty) ...[
-                                  pw.SizedBox(height: 1),
+                                pw.SizedBox(height: 2),
                                 pw.Text(
-                                  student['student_reg_no'].toString(),
+                                  student['student_reg_no'],
                                   style: normalStyle,
                                   textAlign: pw.TextAlign.center,
                                 ),
@@ -2021,26 +2020,15 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
                     );
                   });
 
+                  // Add the table to the page
                   pages.add(
-                    pw.Container(
-                      width: pageWidth,
+                    pw.Center(
                       child: pw.Table(
                         border: pw.TableBorder.all(width: 0.5),
-                        defaultColumnWidth: pw.FixedColumnWidth(cellWidth),
                         children: tableRows,
                       ),
                     ),
                   );
-                  } catch (e) {
-                    developer.log(
-                        'Error creating seating grid for hall $hallId: $e');
-                    pages.add(
-                      pw.Text(
-                        'Error creating seating grid for hall $hallId',
-                        style: pw.TextStyle(color: PdfColors.red),
-                      ),
-                    );
-                  }
 
                   pages.add(pw.SizedBox(height: 16));
                 }

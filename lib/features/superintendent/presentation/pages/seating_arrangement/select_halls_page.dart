@@ -142,25 +142,6 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
                 _capacityNeededPerDateAndSession[firstDate]!.keys.first;
           }
         }
-
-        // Show warning snackbar
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                'We are still working on finding the best halls. For now, we are selecting all available halls.',
-                style: TextStyle(color: Colors.white),
-              ),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 5),
-              action: SnackBarAction(
-                label: 'OK',
-                textColor: Colors.white,
-                onPressed: () {},
-              ),
-            ),
-          );
-        }
       });
     } catch (error) {
       developer.log('Error loading data: $error');
@@ -263,22 +244,18 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
     final rows = hall['no_of_rows'] as int;
     final cols = hall['no_of_columns'] as int;
 
-    // Create a grid and try to fill it with dummy courses
     final grid = List.generate(
       rows,
       (_) => List<String?>.filled(cols, null, growable: false),
-      growable: false,
     );
 
     int effectiveCapacity = 0;
     final dummyCourses = ['TEST1', 'TEST2', 'TEST3', 'TEST4'];
     var currentCourseIndex = 0;
 
-    // Try to fill positions in a more efficient pattern using multiple dummy courses
     for (var row = 0; row < rows; row++) {
       for (var col = 0; col < cols; col++) {
         if (grid[row][col] == null) {
-          // Try each dummy course until we find one that fits
           for (var i = 0; i < dummyCourses.length; i++) {
             final courseIndex = (currentCourseIndex + i) % dummyCourses.length;
             if (_isSeatSuitable(grid, row, col, dummyCourses[courseIndex])) {
@@ -292,7 +269,6 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
       }
     }
 
-    // Return a slightly reduced capacity to account for real-world distribution
     return (effectiveCapacity * 0.95).floor();
   }
 
@@ -474,75 +450,62 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
   }
 
   void _autoSelectHalls() {
-    // Get all unique sessions
-    final allSessions = _capacityNeededPerDateAndSession.values
-        .expand((sessions) => sessions.keys)
-        .toSet()
-        .toList();
-
-    // Create a temporary map to store new selections
     final newSelections = <String, Set<String>>{};
 
-    // Process each session
-    for (final session in allSessions) {
-      final availableHalls = List<Map<String, dynamic>>.from(_halls);
+    // Group exams by date and session
+    final examsByDateAndSession =
+        <String, Map<String, List<Map<String, dynamic>>>>{};
+    for (final exam in widget.exams) {
+      final date = exam['exam_date'].toString().split(' ')[0];
+      final session = exam['session'] as String;
+      examsByDateAndSession[date] ??= {};
+      examsByDateAndSession[date]![session] ??= [];
+      examsByDateAndSession[date]![session]!.add(exam);
+    }
 
-      // Calculate total students for this session
-      final totalStudents = _getCapacityNeededForSession(session);
+    // Process each date and session
+    for (final dateEntry in examsByDateAndSession.entries) {
+      final date = dateEntry.key;
+      for (final sessionEntry in dateEntry.value.entries) {
+        final session = sessionEntry.key;
+        final examsInSession = sessionEntry.value;
 
-      // Initialize selection set for this session
-      newSelections[session] = {};
+        // Calculate total students for this session
+        final studentsInSession = _students.where((student) {
+          return examsInSession.any((exam) =>
+              exam['course_id'] == student['course_code'] &&
+              widget.selectedStudents.contains(student['student_reg_no']));
+        }).toList();
 
-      // Get all exams for this session
-      final examsInSession = widget.exams
-          .where((exam) =>
-              exam['session'] == session &&
-              exam['exam_date'].toString().split(' ')[0] ==
-                  _capacityNeededPerDateAndSession.keys.first)
-          .toList();
+        final totalStudents = studentsInSession.length;
+        if (totalStudents == 0) continue;
 
-      // Get all students for this session
-      final studentsInSession = <Map<String, dynamic>>[];
-      for (final studentRegNo in widget.selectedStudents) {
-        final registeredStudent = _students.firstWhere(
-          (s) => s['student_reg_no'] == studentRegNo,
-          orElse: () => <String, dynamic>{},
-        );
+        // Sort halls by effective capacity (descending)
+        final availableHalls = List<Map<String, dynamic>>.from(_halls)
+          ..sort((a, b) => calculateEffectiveHallCapacity(b)
+              .compareTo(calculateEffectiveHallCapacity(a)));
 
-        if (registeredStudent.isNotEmpty) {
-          final courseId = registeredStudent['course_code'] as String;
-          if (examsInSession.any((exam) => exam['course_id'] == courseId)) {
-            studentsInSession.add(registeredStudent);
+        // Select halls until capacity is met
+        var remainingCapacity = totalStudents;
+        final selectedHallsForSession = <String>[];
+
+        for (final hall in availableHalls) {
+          if (remainingCapacity <= 0) break;
+          final effectiveCap = calculateEffectiveHallCapacity(hall);
+          if (effectiveCap > 0) {
+            selectedHallsForSession.add(hall['hall_id'].toString());
+            remainingCapacity -= effectiveCap;
           }
         }
-      }
 
-      // Sort halls by capacity (largest first)
-      availableHalls.sort((a, b) => calculateEffectiveHallCapacity(b)
-          .compareTo(calculateEffectiveHallCapacity(a)));
-
-      var remainingStudents = totalStudents;
-      var selectedHalls = <Map<String, dynamic>>[];
-
-      // Select halls until we have enough capacity
-      for (final hall in availableHalls) {
-        if (remainingStudents <= 0) break;
-
-        final effectiveCapacity = calculateEffectiveHallCapacity(hall);
-        if (effectiveCapacity > 0) {
-          selectedHalls.add(hall);
-          remainingStudents -= effectiveCapacity;
-          newSelections[session]!.add(hall['hall_id'].toString());
-        }
+        newSelections[session] = selectedHallsForSession.toSet();
       }
     }
 
-    // Update the state with new selections
     setState(() {
-      _selectedHallsBySession = Map<String, Set<String>>.from(newSelections);
-      // If no session is currently selected, select the first one
-      if (_selectedSession == null && allSessions.isNotEmpty) {
-        _selectedSession = allSessions.first;
+      _selectedHallsBySession = newSelections;
+      if (_selectedSession == null && newSelections.isNotEmpty) {
+        _selectedSession = newSelections.keys.first;
       }
     });
   }
@@ -556,46 +519,6 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
     final currentSessionNeeded = _selectedSession != null
         ? _getCapacityNeededForSession(_selectedSession!)
         : 0;
-
-    // Show dialog on init
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: Row(
-            children: [
-              Icon(
-                Icons.warning_amber_rounded,
-                color: Colors.orange,
-                size: 28,
-              ),
-              const SizedBox(width: 8),
-              const Text('Hall Selection'),
-            ],
-          ),
-          content: const Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                  'Please use auto-select while we fix manual hall selection.'),
-              SizedBox(height: 8),
-              Text(
-                'Manual selection is temporarily disabled.',
-                style: TextStyle(color: Colors.grey),
-              ),
-            ],
-          ),
-          actions: [
-            FilledButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Understood'),
-            ),
-          ],
-        ),
-      );
-    });
 
     return Scaffold(
       appBar: AppBar(
@@ -909,15 +832,6 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
                   ),
                 ),
             ],
-          ),
-          // Grey overlay
-          Positioned.fill(
-            child: IgnorePointer(
-              ignoring: false,
-              child: Container(
-                color: Colors.black.withOpacity(0.5),
-              ),
-            ),
           ),
         ],
       ),

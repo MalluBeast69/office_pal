@@ -123,10 +123,14 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
           ..sort();
         _isLoading = false;
 
+        // Initialize selected halls for each session
         _selectedHallsBySession = {};
         for (final dateEntry in _capacityNeededPerDateAndSession.entries) {
           for (final sessionEntry in dateEntry.value.entries) {
-            _selectedHallsBySession[sessionEntry.key] = {};
+            final session = sessionEntry.key;
+            // Auto-select all halls for each session
+            _selectedHallsBySession[session] =
+                _halls.map((h) => h['hall_id'].toString()).toSet();
           }
         }
 
@@ -137,6 +141,25 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
             _selectedSession =
                 _capacityNeededPerDateAndSession[firstDate]!.keys.first;
           }
+        }
+
+        // Show warning snackbar
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'We are still working on finding the best halls. For now, we are selecting all available halls.',
+                style: TextStyle(color: Colors.white),
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 5),
+              action: SnackBarAction(
+                label: 'OK',
+                textColor: Colors.white,
+                onPressed: () {},
+              ),
+            ),
+          );
         }
       });
     } catch (error) {
@@ -534,6 +557,46 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
         ? _getCapacityNeededForSession(_selectedSession!)
         : 0;
 
+    // Show dialog on init
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                Icons.warning_amber_rounded,
+                color: Colors.orange,
+                size: 28,
+              ),
+              const SizedBox(width: 8),
+              const Text('Hall Selection'),
+            ],
+          ),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                  'Please use auto-select while we fix manual hall selection.'),
+              SizedBox(height: 8),
+              Text(
+                'Manual selection is temporarily disabled.',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ],
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Understood'),
+            ),
+          ],
+        ),
+      );
+    });
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Select Halls'),
@@ -721,228 +784,199 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
           ),
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                if (_selectedSession == null)
-                  const Expanded(
-                    child: Center(
-                      child: Text('Please select a session to continue'),
-                    ),
-                  )
-                else
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        padding: const EdgeInsets.all(16),
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount:
-                              MediaQuery.of(context).size.width > 1200
-                                  ? 4
-                                  : MediaQuery.of(context).size.width > 800
-                                      ? 3
-                                      : 2,
-                          childAspectRatio: 1.5,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
-                        ),
-                        itemCount: filteredHalls.length,
-                        itemBuilder: (context, index) {
-                          final hall = filteredHalls[index];
-                          final hallId = hall['hall_id'];
-                          final isSelected =
-                              _selectedHallsBySession[_selectedSession]
-                                      ?.contains(hallId) ??
-                                  false;
+      body: Stack(
+        children: [
+          Column(
+            children: [
+              if (_selectedSession == null)
+                const Expanded(
+                  child: Center(
+                    child: Text('Please select a session to continue'),
+                  ),
+                )
+              else
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(16),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: MediaQuery.of(context).size.width > 1200
+                            ? 4
+                            : MediaQuery.of(context).size.width > 800
+                                ? 3
+                                : 2,
+                        childAspectRatio: 1.5,
+                        crossAxisSpacing: 8,
+                        mainAxisSpacing: 8,
+                      ),
+                      itemCount: filteredHalls.length,
+                      itemBuilder: (context, index) {
+                        final hall = filteredHalls[index];
+                        final hallId = hall['hall_id'];
+                        final isSelected =
+                            _selectedHallsBySession[_selectedSession]
+                                    ?.contains(hallId) ??
+                                false;
 
-                          return Card(
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              side: BorderSide(
-                                color: isSelected
-                                    ? Theme.of(context).colorScheme.primary
-                                    : Theme.of(context)
-                                        .colorScheme
-                                        .outline
-                                        .withOpacity(0.5),
-                              ),
+                        return Card(
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            side: BorderSide(
+                              color: isSelected
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .outline
+                                      .withOpacity(0.5),
                             ),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(8),
-                              onTap: () => _selectHall(hallId, !isSelected),
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                hallId,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 14,
-                                                ),
+                          ),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () => _selectHall(hallId, !isSelected),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              hallId,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14,
                                               ),
-                                              Text(
-                                                hall['hall_dept'],
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodySmall,
-                                              ),
-                                            ],
-                                          ),
+                                            ),
+                                            Text(
+                                              hall['hall_dept'],
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall,
+                                            ),
+                                          ],
                                         ),
-                                        Checkbox(
-                                          value: isSelected,
-                                          onChanged: (value) => _selectHall(
-                                              hallId, value ?? false),
-                                        ),
-                                      ],
-                                    ),
-                                    const Spacer(),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
                                       ),
-                                      decoration: BoxDecoration(
+                                      Checkbox(
+                                        value: isSelected,
+                                        onChanged: (value) =>
+                                            _selectHall(hallId, value ?? false),
+                                      ),
+                                    ],
+                                  ),
+                                  const Spacer(),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primaryContainer,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      'Capacity: ${hall['capacity']}',
+                                      style: TextStyle(
                                         color: Theme.of(context)
                                             .colorScheme
-                                            .primaryContainer,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Text(
-                                        'Capacity: ${hall['capacity']}',
-                                        style: TextStyle(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onPrimaryContainer,
-                                          fontSize: 12,
-                                        ),
+                                            .onPrimaryContainer,
+                                        fontSize: 12,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '${hall['no_of_columns']} × ${hall['no_of_rows']} seats',
-                                      style:
-                                          Theme.of(context).textTheme.bodySmall,
-                                    ),
-                                  ],
-                                ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${hall['no_of_columns']} × ${hall['no_of_rows']} seats',
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                ],
                               ),
                             ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).scaffoldBackgroundColor,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 4,
-                        offset: const Offset(0, -2),
-                      ),
-                    ],
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Selected Halls',
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              if (_selectedSession != null)
-                                Text(
-                                  '${_selectedHallsBySession[_selectedSession]?.length ?? 0} halls for ${_getSessionDisplayName(_selectedSession!)} session',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                            ],
                           ),
-                        ),
-                        FilledButton.icon(
-                          icon: const Icon(Icons.arrow_forward),
-                          label: const Text('Next'),
-                          onPressed: _selectedHallsBySession.values.every(
-                            (halls) {
-                              final session = _selectedHallsBySession.entries
-                                  .firstWhere((e) => e.value == halls)
-                                  .key;
-                              return _getSelectedCapacityForSession(session) >=
-                                  _getCapacityNeededForSession(session);
-                            },
-                          )
-                              ? () {
-                                  // Create a list of hall-session pairs with correct session information
-                                  final allSelectedHallsWithSessions =
-                                      <Map<String, dynamic>>[];
-
-                                  // Iterate through each session and its halls
-                                  for (final sessionEntry
-                                      in _selectedHallsBySession.entries) {
-                                    final session = sessionEntry.key;
-                                    final hallIds = sessionEntry.value;
-
-                                    // For each hall in this session
-                                    for (final hallId in hallIds) {
-                                      // Find the hall details
-                                      final hall = _halls.firstWhere(
-                                        (h) =>
-                                            h['hall_id'].toString() == hallId,
-                                        orElse: () => <String, dynamic>{},
-                                      );
-
-                                      if (hall.isNotEmpty) {
-                                        allSelectedHallsWithSessions.add({
-                                          ...hall,
-                                          'session': session,
-                                          'exam_date':
-                                              _capacityNeededPerDateAndSession
-                                                  .entries.first.key,
-                                        });
-                                      }
-                                    }
-                                  }
-
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => SelectFacultyPage(
-                                        exams: widget.exams,
-                                        selectedStudents:
-                                            widget.selectedStudents,
-                                        selectedHalls:
-                                            allSelectedHallsWithSessions,
-                                      ),
-                                    ),
-                                  );
-                                }
-                              : null,
-                        ),
-                      ],
+                        );
+                      },
                     ),
                   ),
                 ),
-              ],
+            ],
+          ),
+          // Grey overlay
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: false,
+              child: Container(
+                color: Colors.black.withOpacity(0.5),
+              ),
             ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: FilledButton.icon(
+          icon: const Icon(Icons.arrow_forward),
+          label: const Text('Next'),
+          onPressed: _selectedHallsBySession.values.every(
+            (halls) {
+              final session = _selectedHallsBySession.entries
+                  .firstWhere((e) => e.value == halls)
+                  .key;
+              return _getSelectedCapacityForSession(session) >=
+                  _getCapacityNeededForSession(session);
+            },
+          )
+              ? () {
+                  // Create a list of hall-session pairs with correct session information
+                  final allSelectedHallsWithSessions = <Map<String, dynamic>>[];
+
+                  // Iterate through each session and its halls
+                  for (final sessionEntry in _selectedHallsBySession.entries) {
+                    final session = sessionEntry.key;
+                    final hallIds = sessionEntry.value;
+
+                    // For each hall in this session
+                    for (final hallId in hallIds) {
+                      // Find the hall details
+                      final hall = _halls.firstWhere(
+                        (h) => h['hall_id'].toString() == hallId,
+                        orElse: () => <String, dynamic>{},
+                      );
+
+                      if (hall.isNotEmpty) {
+                        allSelectedHallsWithSessions.add({
+                          ...hall,
+                          'session': session,
+                          'exam_date': _capacityNeededPerDateAndSession
+                              .entries.first.key,
+                        });
+                      }
+                    }
+                  }
+
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => SelectFacultyPage(
+                        exams: widget.exams,
+                        selectedStudents: widget.selectedStudents,
+                        selectedHalls: allSelectedHallsWithSessions,
+                      ),
+                    ),
+                  );
+                }
+              : null,
+        ),
+      ),
     );
   }
 }

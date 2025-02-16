@@ -226,6 +226,47 @@ class _SelectStudentsPageState extends ConsumerState<SelectStudentsPage> {
                             ),
                           ),
                         ),
+                        // Add debug info card
+                        Card(
+                          margin: const EdgeInsets.all(16.0),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(Icons.bug_report,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .error),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Debug Info',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .error,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Total Selected Students: ${_selectedStudents.length}',
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                                Text(
+                                  'Maximum Students per Session: ${_students.where((s) => s['is_reguler']).length}',
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                         // Student list
                         GridView.builder(
                           shrinkWrap: true,

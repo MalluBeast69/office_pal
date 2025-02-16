@@ -24,6 +24,7 @@ class ExamRow {
   int duration;
   bool isValid;
   Map<String, String> errors;
+  bool isSelected;
 
   ExamRow({
     required this.examId,
@@ -34,6 +35,7 @@ class ExamRow {
     required this.duration,
     this.isValid = true,
     this.errors = const {},
+    this.isSelected = false,
   });
 
   ExamRow copyWith({
@@ -45,6 +47,7 @@ class ExamRow {
     int? duration,
     bool? isValid,
     Map<String, String>? errors,
+    bool? isSelected,
   }) {
     return ExamRow(
       examId: examId ?? this.examId,
@@ -55,6 +58,7 @@ class ExamRow {
       duration: duration ?? this.duration,
       isValid: isValid ?? this.isValid,
       errors: errors ?? this.errors,
+      isSelected: isSelected ?? this.isSelected,
     );
   }
 }
@@ -62,19 +66,33 @@ class ExamRow {
 class ExamRowsNotifier extends StateNotifier<List<ExamRow>> {
   ExamRowsNotifier() : super([]);
 
+  String _generateUniqueExamId() {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final random = (1000 + (timestamp % 1000)).toString().padLeft(4, '0');
+    final year = DateTime.now().year.toString().substring(2);
+    final month = DateTime.now().month.toString().padLeft(2, '0');
+    final examId = 'EX$year$month$random';
+
+    // Check if ID already exists in current rows
+    if (state.any((row) => row.examId == examId)) {
+      // If duplicate, recursively try again
+      return _generateUniqueExamId();
+    }
+
+    return examId;
+  }
+
   void addRow() {
-    final shortId = (DateTime.now().millisecondsSinceEpoch % 10000)
-        .toString()
-        .padLeft(4, '0');
     state = [
       ...state,
       ExamRow(
-        examId: 'EX$shortId',
+        examId: _generateUniqueExamId(),
         courseId: '',
         examDate: DateTime.now(),
         time: '09:00',
         session: 'MORNING',
         duration: 180,
+        isSelected: false,
       ),
     ];
   }
@@ -96,17 +114,25 @@ class ExamRowsNotifier extends StateNotifier<List<ExamRow>> {
 
   void duplicateRow(int index) {
     final row = state[index];
-    final shortId = (DateTime.now().millisecondsSinceEpoch % 10000)
-        .toString()
-        .padLeft(4, '0');
     state = [
       ...state,
-      row.copyWith(examId: 'EX$shortId'),
+      row.copyWith(
+        examId: _generateUniqueExamId(),
+        isSelected: false,
+      ),
     ];
   }
 
   void deleteAll() {
     state = [];
+  }
+
+  void setAllSelected(bool selected) {
+    state = state.map((row) => row.copyWith(isSelected: selected)).toList();
+  }
+
+  void deleteSelected() {
+    state = state.where((row) => !row.isSelected).toList();
   }
 }
 
@@ -120,6 +146,7 @@ class ExamCreatorPage extends ConsumerStatefulWidget {
 class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
   final ScrollController _horizontalScrollController = ScrollController();
   final ScrollController _verticalScrollController = ScrollController();
+  bool _showOnlyProblematicRows = false;
 
   @override
   void initState() {
@@ -160,15 +187,14 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
                   );
             } else {
               // Add new rows for additional courses
-              final shortId = (DateTime.now().millisecondsSinceEpoch % 10000)
-                  .toString()
-                  .padLeft(4, '0');
               ref.read(examRowsProvider.notifier).addRow();
               final newRowIndex = ref.read(examRowsProvider).length - 1;
               ref.read(examRowsProvider.notifier).updateRow(
                     newRowIndex,
                     ExamRow(
-                      examId: 'EX$shortId',
+                      examId: ref
+                          .read(examRowsProvider.notifier)
+                          ._generateUniqueExamId(),
                       courseId: courseId,
                       examDate: currentRow.examDate,
                       time: currentRow.time,
@@ -188,30 +214,38 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
 
     // Validate all rows
     bool hasErrors = false;
+    List<String> errorMessages = [];
+
     for (var i = 0; i < rows.length; i++) {
       final row = rows[i];
       final errors = <String, String>{};
+      final rowErrors = <String>[];
 
       // Required field validations
       if (row.courseId.isEmpty) {
         errors['courseId'] = 'Course is required';
+        rowErrors.add('Course is required');
       }
 
       if (row.examDate.isBefore(DateTime.now())) {
         errors['examDate'] = 'Exam date cannot be in the past';
+        rowErrors.add('Exam date cannot be in the past');
       }
 
       if (row.session.isEmpty) {
         errors['session'] = 'Session is required';
+        rowErrors.add('Session is required');
       }
 
       if (row.time.isEmpty) {
         errors['time'] = 'Time is required';
+        rowErrors.add('Time is required');
       }
 
       // Duration validation (must be > 0 per DB constraint)
       if (row.duration <= 0) {
         errors['duration'] = 'Duration must be greater than 0';
+        rowErrors.add('Duration must be greater than 0');
       }
 
       // Time validation based on session
@@ -220,14 +254,30 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
 
       if (row.session == 'MORNING' && hour >= 12) {
         errors['time'] = 'Morning session must be before 12:00 PM';
+        rowErrors.add('Morning session must be before 12:00 PM');
       } else if (row.session == 'AFTERNOON' && (hour < 12 || hour >= 18)) {
         errors['time'] =
             'Afternoon session must be between 12:00 PM and 6:00 PM';
+        rowErrors.add('Afternoon session must be between 12:00 PM and 6:00 PM');
+      }
+
+      // Check for duplicate course IDs
+      if (row.courseId.isNotEmpty) {
+        final duplicateCourse = rows.indexWhere(
+            (otherRow) => otherRow.courseId == row.courseId && otherRow != row);
+        if (duplicateCourse != -1) {
+          errors['courseId'] =
+              'This course is already scheduled in row ${duplicateCourse + 1}';
+          rowErrors.add(
+              'Course ${row.courseId} is already scheduled in row ${duplicateCourse + 1}');
+        }
       }
 
       // Update row with any errors
       if (errors.isNotEmpty) {
         hasErrors = true;
+        errorMessages.add(
+            'Row ${i + 1} (${row.examId}) has the following errors:\n${rowErrors.map((e) => "  - $e").join("\n")}');
         ref.read(examRowsProvider.notifier).updateRow(
               i,
               row.copyWith(isValid: false, errors: errors),
@@ -242,9 +292,59 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
 
     if (hasErrors) {
       if (mounted) {
+        // Show detailed error dialog
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red),
+                const SizedBox(width: 8),
+                const Text('Validation Errors'),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'The following errors were found:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  ...errorMessages.map((error) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(error),
+                      )),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Please fix these errors before submitting.',
+                    style: TextStyle(fontStyle: FontStyle.italic),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+              FilledButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  setState(() => _showOnlyProblematicRows = true);
+                },
+                icon: const Icon(Icons.filter_list),
+                label: const Text('Show Problem Rows'),
+              ),
+            ],
+          ),
+        );
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Please fix the errors before submitting'),
+            content: Text('Please fix the errors in the highlighted rows'),
             backgroundColor: Colors.red,
           ),
         );
@@ -305,12 +405,43 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
         Navigator.of(context).pop();
       }
 
-      // Show error message
+      // Show detailed error dialog
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error creating exams: ${e.toString()}'),
-            backgroundColor: Colors.red,
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red),
+                const SizedBox(width: 8),
+                const Text('Error Creating Exams'),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'An error occurred while creating the exams:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(e.toString()),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'If this error persists, please contact support.',
+                    style: TextStyle(fontStyle: FontStyle.italic),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ],
           ),
         );
       }
@@ -320,21 +451,118 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
   @override
   Widget build(BuildContext context) {
     final rows = ref.watch(examRowsProvider);
+    final selectedCount = rows.where((row) => row.isSelected).length;
+    final hasProblematicRows = rows.any((row) => !row.isValid);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Create Exams'),
         actions: [
-          FilledButton.icon(
-            onPressed: _submitExams,
-            icon: const Icon(Icons.save),
-            label: const Text('Submit Exams'),
-          ),
-          const SizedBox(width: 16),
+          if (hasProblematicRows) ...[
+            FilledButton.icon(
+              onPressed: () {
+                setState(() {
+                  _showOnlyProblematicRows = !_showOnlyProblematicRows;
+                });
+              },
+              icon: Icon(_showOnlyProblematicRows
+                  ? Icons.filter_list_off
+                  : Icons.filter_list),
+              style: FilledButton.styleFrom(
+                backgroundColor:
+                    _showOnlyProblematicRows ? Colors.orange : Colors.blue,
+              ),
+              label:
+                  Text(_showOnlyProblematicRows ? 'Show All' : 'Show Errors'),
+            ),
+            const SizedBox(width: 16),
+          ],
+          if (selectedCount > 0) ...[
+            Text(
+              '$selectedCount selected',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(width: 16),
+            FilledButton.icon(
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Delete Selected Rows'),
+                    content: Text(
+                        'Are you sure you want to delete $selectedCount selected rows?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton.icon(
+                        onPressed: () {
+                          ref.read(examRowsProvider.notifier).deleteSelected();
+                          Navigator.pop(context);
+                        },
+                        icon: const Icon(Icons.delete),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.red,
+                        ),
+                        label: const Text('Delete'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              icon: const Icon(Icons.delete),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red,
+              ),
+              label: const Text('Delete Selected'),
+            ),
+            const SizedBox(width: 16),
+          ] else ...[
+            FilledButton.icon(
+              onPressed: _submitExams,
+              icon: const Icon(Icons.save),
+              label: const Text('Submit Exams'),
+            ),
+            const SizedBox(width: 16),
+          ],
         ],
       ),
       body: Column(
         children: [
+          if (hasProblematicRows && !_showOnlyProblematicRows)
+            Container(
+              padding: const EdgeInsets.all(8),
+              margin: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: Colors.red),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'There are errors in some rows. Click "Show Errors" to view only problematic rows.',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _showOnlyProblematicRows = true;
+                      });
+                    },
+                    child: const Text('Show Errors'),
+                  ),
+                ],
+              ),
+            ),
           Expanded(
             child: Scrollbar(
               controller: _verticalScrollController,
@@ -353,24 +581,70 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
                       headingRowColor: MaterialStateProperty.all(
                         Theme.of(context).colorScheme.surfaceVariant,
                       ),
-                      columns: const [
-                        DataColumn(label: Text('Exam ID')),
-                        DataColumn(label: Text('Course')),
-                        DataColumn(label: Text('Date')),
-                        DataColumn(label: Text('Session')),
-                        DataColumn(label: Text('Time')),
-                        DataColumn(label: Text('Duration (mins)')),
-                        DataColumn(label: Text('Actions')),
+                      columns: [
+                        const DataColumn(label: Text('Exam ID')),
+                        DataColumn(
+                          label: Row(
+                            children: [
+                              const Text('Course'),
+                              if (hasProblematicRows)
+                                Tooltip(
+                                  message:
+                                      'Some courses have validation errors',
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(left: 4),
+                                    child: Icon(
+                                      Icons.error_outline,
+                                      size: 16,
+                                      color: Colors.red,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const DataColumn(label: Text('Date')),
+                        const DataColumn(label: Text('Session')),
+                        const DataColumn(label: Text('Time')),
+                        const DataColumn(label: Text('Duration (mins)')),
+                        const DataColumn(label: Text('Actions')),
                       ],
                       rows: List.generate(rows.length, (index) {
                         final row = rows[index];
+                        if (_showOnlyProblematicRows && row.isValid) {
+                          return null;
+                        }
                         return DataRow(
+                          selected: row.isSelected,
                           color: MaterialStateProperty.resolveWith((states) {
                             if (!row.isValid) return Colors.red.shade50;
+                            if (states.contains(MaterialState.selected))
+                              return Theme.of(context)
+                                  .colorScheme
+                                  .primaryContainer
+                                  .withOpacity(0.12);
                             return null;
                           }),
                           cells: [
-                            DataCell(Text(row.examId)),
+                            DataCell(
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Checkbox(
+                                    value: row.isSelected,
+                                    onChanged: (bool? value) {
+                                      ref
+                                          .read(examRowsProvider.notifier)
+                                          .updateRow(
+                                            index,
+                                            row.copyWith(isSelected: value),
+                                          );
+                                    },
+                                  ),
+                                  Text(row.examId),
+                                ],
+                              ),
+                            ),
                             DataCell(
                               InkWell(
                                 onTap: () =>
@@ -529,7 +803,8 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
                                         }
                                       },
                                 child: Container(
-                                  padding: const EdgeInsets.all(8),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
                                     border: Border.all(
                                       color: Colors.grey.shade300,
@@ -678,7 +953,7 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
                             ),
                           ],
                         );
-                      }),
+                      }).whereType<DataRow>().toList(),
                     ),
                   ),
                 ),

@@ -24,6 +24,7 @@ class _HallManagementPageState extends ConsumerState<HallManagementPage> {
   final _hallDeptController = TextEditingController();
   final _noOfColumnsController = TextEditingController();
   final _capacityController = TextEditingController();
+  final _noOfRowsController = TextEditingController();
 
   @override
   void initState() {
@@ -37,6 +38,7 @@ class _HallManagementPageState extends ConsumerState<HallManagementPage> {
     _hallDeptController.dispose();
     _noOfColumnsController.dispose();
     _capacityController.dispose();
+    _noOfRowsController.dispose();
     super.dispose();
   }
 
@@ -124,7 +126,8 @@ class _HallManagementPageState extends ConsumerState<HallManagementPage> {
           final hallId = columns[0].trim();
           final hallDept = columns[1].trim();
           final noOfColumns = int.tryParse(columns[2].trim()) ?? 0;
-          final capacity = int.tryParse(columns[3].trim()) ?? 0;
+          final noOfRows = int.tryParse(columns[3].trim()) ?? 0;
+          final capacity = noOfColumns * noOfRows;
 
           developer.log('Adding hall: $hallId ($hallDept)');
 
@@ -132,6 +135,7 @@ class _HallManagementPageState extends ConsumerState<HallManagementPage> {
             'hall_id': hallId,
             'hall_dept': hallDept,
             'no_of_columns': noOfColumns,
+            'no_of_rows': noOfRows,
             'capacity': capacity,
             'availability': true,
           });
@@ -170,11 +174,16 @@ class _HallManagementPageState extends ConsumerState<HallManagementPage> {
 
     setState(() => isLoading = true);
     try {
+      final noOfColumns = int.parse(_noOfColumnsController.text);
+      final noOfRows = int.parse(_noOfRowsController.text);
+      final capacity = noOfColumns * noOfRows;
+
       await Supabase.instance.client.from('hall').insert({
         'hall_id': _hallIdController.text,
         'hall_dept': _hallDeptController.text,
-        'no_of_columns': 0,
-        'capacity': 0,
+        'no_of_columns': noOfColumns,
+        'no_of_rows': noOfRows,
+        'capacity': capacity,
         'availability': true,
       });
 
@@ -213,20 +222,68 @@ class _HallManagementPageState extends ConsumerState<HallManagementPage> {
             children: [
               TextFormField(
                 controller: _hallIdController,
-                decoration: const InputDecoration(labelText: 'Hall ID'),
+                decoration: const InputDecoration(
+                  labelText: 'Hall ID',
+                  hintText: 'e.g., HALL001',
+                ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter hall ID';
+                  }
+                  if (value.length > 20) {
+                    return 'Hall ID must be less than 20 characters';
                   }
                   return null;
                 },
               ),
               TextFormField(
                 controller: _hallDeptController,
-                decoration: const InputDecoration(labelText: 'Department'),
+                decoration: const InputDecoration(
+                  labelText: 'Department',
+                  hintText: 'e.g., CSE',
+                ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter department';
+                  }
+                  if (value.length > 10) {
+                    return 'Department must be less than 10 characters';
+                  }
+                  return null;
+                },
+              ),
+              TextFormField(
+                controller: _noOfColumnsController,
+                decoration: const InputDecoration(
+                  labelText: 'Number of Columns',
+                  hintText: 'e.g., 5',
+                ),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter number of columns';
+                  }
+                  final number = int.tryParse(value);
+                  if (number == null || number <= 0) {
+                    return 'Number of columns must be greater than 0';
+                  }
+                  return null;
+                },
+              ),
+              TextFormField(
+                controller: _noOfRowsController,
+                decoration: const InputDecoration(
+                  labelText: 'Number of Rows',
+                  hintText: 'e.g., 6',
+                ),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter number of rows';
+                  }
+                  final number = int.tryParse(value);
+                  if (number == null || number <= 0) {
+                    return 'Number of rows must be greater than 0';
                   }
                   return null;
                 },
@@ -236,12 +293,156 @@ class _HallManagementPageState extends ConsumerState<HallManagementPage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              _clearForm();
+              Navigator.pop(context);
+            },
             child: const Text('Cancel'),
           ),
           FilledButton(
             onPressed: _addHall,
             child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _clearForm() {
+    _hallIdController.clear();
+    _hallDeptController.clear();
+    _noOfColumnsController.clear();
+    _capacityController.clear();
+    _noOfRowsController.clear();
+  }
+
+  Future<void> _updateHall(String hallId) async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => isLoading = true);
+    try {
+      final noOfColumns = int.parse(_noOfColumnsController.text);
+      final noOfRows = int.parse(_noOfRowsController.text);
+      final capacity = noOfColumns * noOfRows;
+
+      await Supabase.instance.client.from('hall').update({
+        'hall_dept': _hallDeptController.text,
+        'no_of_columns': noOfColumns,
+        'no_of_rows': noOfRows,
+        'capacity': capacity,
+      }).eq('hall_id', hallId);
+
+      if (mounted) {
+        _clearForm();
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Hall updated successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadHalls();
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error updating hall: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => isLoading = false);
+      }
+    }
+  }
+
+  void _showEditHallDialog(Map<String, dynamic> hall) {
+    _hallIdController.text = hall['hall_id'].toString();
+    _hallDeptController.text = hall['hall_dept'].toString();
+    _noOfColumnsController.text = hall['no_of_columns'].toString();
+    _noOfRowsController.text = (hall['no_of_rows'] ?? '').toString();
+    _capacityController.text = hall['capacity'].toString();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Hall'),
+        content: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _hallIdController,
+                decoration: const InputDecoration(labelText: 'Hall ID'),
+                enabled: false,
+              ),
+              TextFormField(
+                controller: _hallDeptController,
+                decoration: const InputDecoration(
+                  labelText: 'Department',
+                  hintText: 'e.g., CSE',
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter department';
+                  }
+                  if (value.length > 10) {
+                    return 'Department must be less than 10 characters';
+                  }
+                  return null;
+                },
+              ),
+              TextFormField(
+                controller: _noOfColumnsController,
+                decoration: const InputDecoration(
+                  labelText: 'Number of Columns',
+                  hintText: 'e.g., 5',
+                ),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter number of columns';
+                  }
+                  final number = int.tryParse(value);
+                  if (number == null || number <= 0) {
+                    return 'Number of columns must be greater than 0';
+                  }
+                  return null;
+                },
+              ),
+              TextFormField(
+                controller: _noOfRowsController,
+                decoration: const InputDecoration(
+                  labelText: 'Number of Rows',
+                  hintText: 'e.g., 6',
+                ),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter number of rows';
+                  }
+                  final number = int.tryParse(value);
+                  if (number == null || number <= 0) {
+                    return 'Number of rows must be greater than 0';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              _clearForm();
+              Navigator.pop(context);
+            },
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => _updateHall(hall['hall_id']),
+            child: const Text('Update'),
           ),
         ],
       ),
@@ -306,127 +507,6 @@ class _HallManagementPageState extends ConsumerState<HallManagementPage> {
             backgroundColor: Colors.red,
           ),
         );
-      }
-    }
-  }
-
-  void _showEditHallDialog(Map<String, dynamic> hall) {
-    _hallIdController.text = hall['hall_id'].toString();
-    _hallDeptController.text = hall['hall_dept'].toString();
-    _noOfColumnsController.text = hall['no_of_columns'].toString();
-    _capacityController.text = hall['capacity'].toString();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Hall'),
-        content: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: _hallIdController,
-                decoration: const InputDecoration(labelText: 'Hall ID'),
-                enabled: false, // Hall ID cannot be edited
-              ),
-              TextFormField(
-                controller: _hallDeptController,
-                decoration: const InputDecoration(labelText: 'Department'),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter department';
-                  }
-                  return null;
-                },
-              ),
-              TextFormField(
-                controller: _noOfColumnsController,
-                decoration:
-                    const InputDecoration(labelText: 'Number of Columns'),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter number of columns';
-                  }
-                  if (int.tryParse(value) == null || int.parse(value) <= 0) {
-                    return 'Please enter a valid number';
-                  }
-                  return null;
-                },
-              ),
-              TextFormField(
-                controller: _capacityController,
-                decoration: const InputDecoration(labelText: 'Capacity'),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter capacity';
-                  }
-                  if (int.tryParse(value) == null || int.parse(value) <= 0) {
-                    return 'Please enter a valid number';
-                  }
-                  return null;
-                },
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              _clearForm();
-              Navigator.pop(context);
-            },
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => _updateHall(hall['hall_id']),
-            child: const Text('Update'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _clearForm() {
-    _hallIdController.clear();
-    _hallDeptController.clear();
-    _noOfColumnsController.clear();
-    _capacityController.clear();
-  }
-
-  Future<void> _updateHall(String hallId) async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => isLoading = true);
-    try {
-      await Supabase.instance.client.from('hall').update({
-        'hall_dept': _hallDeptController.text,
-        'no_of_columns': int.parse(_noOfColumnsController.text),
-        'capacity': int.parse(_capacityController.text),
-      }).eq('hall_id', hallId);
-
-      if (mounted) {
-        _clearForm();
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Hall updated successfully'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        _loadHalls();
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error updating hall: $error'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        setState(() => isLoading = false);
       }
     }
   }
@@ -573,6 +653,7 @@ class _HallManagementPageState extends ConsumerState<HallManagementPage> {
                                 children: [
                                   Text('Department: ${hall['hall_dept']}'),
                                   Text('Columns: ${hall['no_of_columns']}'),
+                                  Text('Rows: ${hall['no_of_rows'] ?? 'N/A'}'),
                                   Text('Capacity: ${hall['capacity']}'),
                                 ],
                               ),

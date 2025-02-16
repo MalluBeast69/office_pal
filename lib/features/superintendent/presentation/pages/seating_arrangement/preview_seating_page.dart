@@ -152,108 +152,194 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
     try {
       setState(() => _isLoading = true);
 
-      developer.log('=== Starting Seating Generation ===');
-      developer.log('Input Summary:');
+      developer.log('=== Seating Arrangement Summary ===');
       developer.log(
-          '- Exams: ${widget.exams.map((e) => '${e['course_id']} (${e['session']})').join(', ')}');
-      developer.log('- Total Students: ${widget.selectedStudents.length}');
-      developer.log(
-          '- Halls: ${widget.selectedHalls.map((h) => '${h['hall_id']} (${h['session']})').join(', ')}');
+          'Total Students to be Seated: ${widget.selectedStudents.length}');
 
       _seatingArrangements.clear();
 
-      // Group students by exam
-      final studentsByExam = <String, List<Map<String, dynamic>>>{};
-      for (final exam in widget.exams) {
-        final courseId = exam['course_id'] as String;
-        studentsByExam[courseId] =
-            _students.where((s) => s['course_code'] == courseId).toList();
-      }
-
-      // Process each date
+      // Group halls by date and session
+      final hallsByDateAndSession =
+          <String, Map<String, List<Map<String, dynamic>>>>{};
       for (final hall in widget.selectedHalls) {
         final date = hall['exam_date'].toString().split(' ')[0];
         final session = hall['session'] as String;
-        final hallId = hall['hall_id'].toString();
+        hallsByDateAndSession[date] ??= {};
+        hallsByDateAndSession[date]![session] ??= [];
+        hallsByDateAndSession[date]![session]!.add(hall);
+      }
 
+      // Track all unassigned students across all sessions
+      final allUnassignedStudents = <Map<String, dynamic>>[];
+
+      // Process each date
+      for (final date in hallsByDateAndSession.keys) {
         _seatingArrangements[date] ??= {};
-        _seatingArrangements[date]![session] ??= {};
-        _seatingArrangements[date]![session]![hallId] = [];
 
-        // Get exams for this session
-        final examsForSession = widget.exams
-            .where((e) =>
-                e['session'] == session &&
-                e['exam_date'].toString().split(' ')[0] == date)
-            .toList();
+        // Process each session
+        for (final session in hallsByDateAndSession[date]!.keys) {
+          _seatingArrangements[date]![session] ??= {};
 
-        developer.log('Processing hall $hallId for $date $session');
-        developer.log(
-            '- Exams in session: ${examsForSession.map((e) => e['course_id']).join(', ')}');
+          // Get exams for this session
+          final examsForSession = widget.exams
+              .where((e) =>
+                  e['session'] == session &&
+                  e['exam_date'].toString().split(' ')[0] == date)
+              .toList();
 
-        // Get hall details
-        final hallDetails = _halls.firstWhere((h) => h['hall_id'] == hallId);
-        final rows = hallDetails['no_of_rows'] as int;
-        final cols = hallDetails['no_of_columns'] as int;
+          // Get all students for this session's exams
+          final studentsForSession = <Map<String, dynamic>>[];
+          for (final exam in examsForSession) {
+            final courseId = exam['course_id'] as String;
+            final examStudents =
+                _students.where((s) => s['course_code'] == courseId).toList();
+            studentsForSession.addAll(examStudents);
+          }
 
-        // Create grid to track occupied seats
-        final grid = List.generate(
-          rows,
-          (_) => List<String?>.filled(cols, null, growable: false),
-        );
+          // Sort halls by capacity (largest first)
+          final availableHalls = hallsByDateAndSession[date]![session]!
+            ..sort((a, b) => calculateEffectiveHallCapacity(b)
+                .compareTo(calculateEffectiveHallCapacity(a)));
 
-        // Get students for this session's exams
-        for (final exam in examsForSession) {
-          final courseId = exam['course_id'] as String;
-          final examId = exam['exam_id'] as String;
-          final students =
-              _students.where((s) => s['course_code'] == courseId).toList();
+          var remainingStudents =
+              List<Map<String, dynamic>>.from(studentsForSession);
+          var selectedHalls = <Map<String, dynamic>>[];
+          var totalCapacityNeeded = studentsForSession.length;
+          var currentCapacity = 0;
 
-          // Sort by regular/supplementary
-          students.sort((a, b) {
-            if (a['is_supplementary'] != b['is_supplementary']) {
-              return a['is_supplementary'] ? 1 : -1;
+          // Select only needed halls
+          for (final hall in availableHalls) {
+            if (remainingStudents.isEmpty ||
+                currentCapacity >= totalCapacityNeeded) break;
+
+            final effectiveCapacity = calculateEffectiveHallCapacity(hall);
+            if (effectiveCapacity > 0) {
+              selectedHalls.add(hall);
+              currentCapacity += effectiveCapacity;
             }
-            return 0;
-          });
+          }
 
-          // Assign seats using spiral pattern
-          for (var i = 0; i < rows; i++) {
-            for (var j = 0; j < cols; j++) {
-              if (students.isEmpty) break;
-              if (grid[i][j] == null && _isSeatSuitable(grid, i, j, courseId)) {
-                final student = students.removeAt(0);
-                grid[i][j] = courseId;
+          // Process selected halls
+          for (final hall in selectedHalls) {
+            final hallId = hall['hall_id'].toString();
+            _seatingArrangements[date]![session]![hallId] = [];
 
-                final studentWithSeat = Map<String, dynamic>.from(student);
-                studentWithSeat['row_no'] = i;
-                studentWithSeat['column_no'] = j;
-                studentWithSeat['exam_id'] = examId;
+            final rows = hall['no_of_rows'] as int;
+            final cols = hall['no_of_columns'] as int;
+            final grid = List.generate(
+              rows,
+              (_) => List<String?>.filled(cols, null, growable: false),
+            );
 
-                _seatingArrangements[date]![session]![hallId]!
-                    .add(studentWithSeat);
+            // Sort exams by number of students (largest first)
+            examsForSession.sort((a, b) {
+              final aCount = remainingStudents
+                  .where((s) => s['course_code'] == a['course_id'])
+                  .length;
+              final bCount = remainingStudents
+                  .where((s) => s['course_code'] == b['course_id'])
+                  .length;
+              return bCount.compareTo(aCount);
+            });
+
+            // Assign seats using spiral pattern
+            for (final exam in examsForSession) {
+              final courseId = exam['course_id'] as String;
+              final examId = exam['exam_id'] as String;
+
+              // Get unassigned students for this exam
+              final examStudents = remainingStudents
+                  .where((s) => s['course_code'] == courseId)
+                  .toList();
+
+              // Sort by regular/supplementary
+              examStudents.sort((a, b) {
+                if (a['is_supplementary'] != b['is_supplementary']) {
+                  return a['is_supplementary'] ? 1 : -1;
+                }
+                return 0;
+              });
+
+              // Try to assign seats
+              for (var i = 0; i < rows; i++) {
+                for (var j = 0; j < cols; j++) {
+                  if (examStudents.isEmpty) break;
+                  if (grid[i][j] == null &&
+                      _isSeatSuitable(grid, i, j, courseId)) {
+                    final student = examStudents.removeAt(0);
+                    grid[i][j] = courseId;
+
+                    final studentWithSeat = Map<String, dynamic>.from(student);
+                    studentWithSeat['row_no'] = i;
+                    studentWithSeat['column_no'] = j;
+                    studentWithSeat['exam_id'] = examId;
+
+                    _seatingArrangements[date]![session]![hallId]!
+                        .add(studentWithSeat);
+                    remainingStudents.remove(student);
+                  }
+                }
+                if (examStudents.isEmpty) break;
               }
             }
           }
-        }
 
-        final studentsInHall =
-            _seatingArrangements[date]?[session]?[hallId]?.length ?? 0;
-        developer.log('- Assigned $studentsInHall students to hall');
+          // Add any unassigned students to the tracking list
+          if (remainingStudents.isNotEmpty) {
+            allUnassignedStudents.addAll(remainingStudents);
+          }
+        }
       }
 
-      developer.log('=== Seating Generation Complete ===');
-      int totalAssignments = 0;
+      // Calculate total seated students
+      final seatedStudents = <String>{}; // Using a Set to count unique students
       _seatingArrangements.forEach((date, sessions) {
         sessions.forEach((session, halls) {
           halls.forEach((hall, students) {
-            totalAssignments += students.length;
+            for (final student in students) {
+              seatedStudents.add(student['student_reg_no'] as String);
+            }
           });
         });
       });
-      developer.log('Total seating assignments: $totalAssignments');
+
+      // Log final summary
+      developer.log('\nSeating Arrangement Results:');
+      developer.log('Total Students: ${widget.selectedStudents.length}');
+      developer.log('Successfully Seated: ${seatedStudents.length}');
+
+      if (allUnassignedStudents.isNotEmpty) {
+        developer.log(
+            '\nWARNING: ${allUnassignedStudents.length} students could not be seated:');
+        // Group unassigned students by course for better readability
+        final unassignedByCourse = <String, List<String>>{};
+        for (final student in allUnassignedStudents) {
+          final courseId = student['course_code'] as String;
+          unassignedByCourse[courseId] ??= [];
+          unassignedByCourse[courseId]!
+              .add(student['student_reg_no'] as String);
+        }
+
+        // Log unassigned students grouped by course
+        unassignedByCourse.forEach((courseId, students) {
+          developer.log('\nCourse: $courseId');
+          developer.log('Unassigned Students: ${students.join(", ")}');
+        });
+
+        // Show warning in UI
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  'Warning: ${allUnassignedStudents.length} students could not be seated. Check logs for details.'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      }
     } catch (error) {
-      developer.log('ERROR in seating generation: $error');
+      developer.log('Error in seating generation: $error');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

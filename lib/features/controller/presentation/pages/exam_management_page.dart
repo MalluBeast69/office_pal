@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:developer' as developer;
+import 'package:intl/intl.dart';
 import 'package:office_pal/features/controller/presentation/providers/exam_provider.dart';
 import 'package:office_pal/features/controller/presentation/providers/course_provider.dart';
 import 'package:office_pal/features/controller/domain/models/exam.dart';
 import 'package:office_pal/features/controller/domain/models/course.dart';
-import 'package:office_pal/features/controller/presentation/widgets/excel_preview_dialog.dart';
+import 'package:office_pal/features/controller/presentation/widgets/excel_preview_dialog.dart'
+    as preview;
 import 'package:office_pal/features/controller/utils/exam_timetable_excel.dart';
-import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:excel/excel.dart' as excel;
+import 'package:office_pal/features/superintendent/presentation/pages/exam_creator_page.dart'
+    as creator;
 
 enum ExamSortOption {
   date('Date'),
@@ -27,17 +32,338 @@ class ExamManagementPage extends ConsumerStatefulWidget {
 }
 
 class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
-  String _searchQuery = '';
-  ExamSortOption _sortOption = ExamSortOption.date;
-  bool _sortAscending = true;
+  bool isLoading = false;
+  final ScrollController _horizontalScrollController = ScrollController();
+  final ScrollController _verticalScrollController = ScrollController();
+  List<Map<String, dynamic>> exams = [];
+  List<Map<String, dynamic>> filteredExams = [];
+  List<Map<String, dynamic>> courses = [];
+  String? selectedCourse;
+  String? selectedExamType;
+  DateTime? selectedDate;
+  String? selectedSession;
+  final _formKey = GlobalKey<FormState>();
   bool _showToday = true;
   bool _showUpcoming = true;
   bool _showPast = true;
+  String _searchQuery = '';
+  ExamSortOption _sortOption = ExamSortOption.date;
+  bool _sortAscending = true;
+  Set<String> selectedExams = {};
+
+  final List<String> examTypes = [
+    'common1',
+    'common2',
+    'minor1',
+    'minor2',
+    'major',
+    'specific'
+  ];
+  final List<String> sessions = ['Morning', 'Afternoon'];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExams();
+    _loadCourses();
+    // Add listener to refresh exams when page gains focus
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.invalidate(examsProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    _horizontalScrollController.dispose();
+    _verticalScrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCourses() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('course')
+          .select()
+          .order('course_code');
+
+      if (mounted) {
+        setState(() {
+          courses = List<Map<String, dynamic>>.from(response);
+        });
+      }
+    } catch (error) {
+      developer.log('Error loading courses: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading courses: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadExams() async {
+    setState(() => isLoading = true);
+    try {
+      final response = await Supabase.instance.client
+          .from('exam')
+          .select(
+              '*, course:course_id(course_code, course_name, course_type, dept_id)')
+          .order('exam_date');
+
+      if (mounted) {
+        setState(() {
+          exams = List<Map<String, dynamic>>.from(response);
+          filteredExams = List.from(exams);
+          isLoading = false;
+        });
+      }
+    } catch (error) {
+      developer.log('Error loading exams: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading exams: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => isLoading = false);
+      }
+    }
+  }
+
+  void _applyFilters() {
+    setState(() {
+      filteredExams = exams.where((exam) {
+        bool matchesCourse = selectedCourse == null ||
+            exam['course_id'].toString() == selectedCourse;
+        return matchesCourse;
+      }).toList();
+    });
+  }
+
+  void _resetFilters() {
+    setState(() {
+      selectedCourse = null;
+      filteredExams = List.from(exams);
+    });
+  }
+
+  void _showManualGenerationDialog() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const creator.ExamCreatorPage(),
+      ),
+    );
+  }
+
+  Future<void> _generateExam() async {
+    if (selectedDate == null ||
+        selectedSession == null ||
+        selectedExamType == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please fill in all fields'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (selectedExamType == 'specific' && selectedCourse == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a course'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() => isLoading = true);
+    try {
+      // Get relevant courses based on exam type
+      List<Map<String, dynamic>> targetCourses = [];
+      if (selectedExamType == 'specific') {
+        targetCourses = courses
+            .where((course) => course['course_code'] == selectedCourse)
+            .toList();
+      } else {
+        targetCourses = courses
+            .where((course) => course['course_type'] == selectedExamType)
+            .toList();
+      }
+
+      // Generate exam entries
+      for (var course in targetCourses) {
+        // Create a shorter unique identifier using the last 4 digits of timestamp
+        final shortId = (DateTime.now().millisecondsSinceEpoch % 10000)
+            .toString()
+            .padLeft(4, '0');
+        await Supabase.instance.client.from('exam').insert({
+          'exam_id': 'EX${course['course_code']}$shortId',
+          'course_id': course['course_code'],
+          'exam_date': selectedDate!.toIso8601String().split('T')[0],
+          'session': selectedSession,
+          'time': selectedSession == 'Morning' ? '09:00' : '14:00',
+          'duration': 180,
+        });
+      }
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Exams generated successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadExams();
+      }
+    } catch (error) {
+      developer.log('Error generating exams: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating exams: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() => isLoading = false);
+    }
+  }
+
+  Future<void> _deleteExam(String examId) async {
+    try {
+      await Supabase.instance.client
+          .from('exam')
+          .delete()
+          .eq('exam_id', examId);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Exam deleted successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadExams();
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error deleting exam: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Color _getExamTypeColor(String type) {
+    switch (type) {
+      case 'major':
+        return Colors.blue;
+      case 'minor1':
+        return Colors.purple;
+      case 'minor2':
+        return Colors.orange;
+      case 'common1':
+        return Colors.green;
+      case 'common2':
+        return Colors.teal;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  Widget _buildExamList(List<Map<String, dynamic>> exams) {
+    if (exams.isEmpty) {
+      return const Center(
+        child: Text('No exams scheduled'),
+      );
+    }
+
+    final filteredExams = _filterAndSortExams(exams);
+
+    return ListView.builder(
+      itemCount: filteredExams.length,
+      itemBuilder: (context, index) {
+        final exam = filteredExams[index];
+        final course = exam['course'] as Map<String, dynamic>;
+        final examDate = DateTime.parse(exam['exam_date']);
+        final isToday = _isToday(examDate);
+
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: ListTile(
+            title: Row(
+              children: [
+                Text('${course['course_code']} - ${course['course_name']}'),
+                const SizedBox(width: 8),
+                _buildStatusBadge(examDate),
+              ],
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Date: ${DateFormat('MMM d, y').format(examDate)}',
+                ),
+                Text(
+                  'Session: ${exam['session']}, Time: ${exam['time']}, Duration: ${exam['duration']} mins',
+                ),
+                Text(
+                  'Department: ${course['dept_id']}',
+                ),
+              ],
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.edit),
+                  onPressed: () => _showEditDialog(exam),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete),
+                  onPressed: () => _showDeleteConfirmation(Exam.fromJson(exam)),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  bool _isToday(DateTime date) {
+    final now = DateTime.now();
+    return date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day;
+  }
 
   List<Map<String, dynamic>> _filterAndSortExams(
       List<Map<String, dynamic>> exams) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+
+    // First, deduplicate exams based on course_id
+    final uniqueExams = <String, Map<String, dynamic>>{};
+    for (var exam in exams) {
+      final courseId = exam['course_id'];
+      if (!uniqueExams.containsKey(courseId)) {
+        uniqueExams[courseId] = exam;
+      }
+    }
+    exams = uniqueExams.values.toList();
 
     return exams.where((exam) {
       // Search filter
@@ -97,7 +423,7 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
       });
   }
 
-  Widget _buildExamStatusBadge(DateTime examDate) {
+  Widget _buildStatusBadge(DateTime examDate) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final examDay = DateTime(examDate.year, examDate.month, examDate.day);
@@ -153,125 +479,293 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
     }
   }
 
-  Future<void> _generateExcelForAllExams(
-      BuildContext context, WidgetRef ref) async {
-    try {
-      final examRepository = ref.read(examRepositoryProvider);
-      final courseRepository = ref.read(courseRepositoryProvider);
+  Future<void> _showEditDialog(Map<String, dynamic> exam) async {
+    final DateTime initialDate = DateTime.parse(exam['exam_date']);
+    DateTime selectedDate = initialDate;
+    String selectedSession = exam['session'];
+    String selectedTime = exam['time'];
+    int selectedDuration = exam['duration'];
+    bool hasChanges = false;
 
-      final exams = await examRepository.generateExcelData();
-      final courses = await courseRepository.getCourses();
-
-      await showDialog(
-        context: context,
-        builder: (context) => ExcelPreviewDialog(
-          excelBytes: ExamTimetableExcel.generate(
-            exams.map((e) => Exam.fromJson(e)).toList(),
-            courses.map((c) => Course.fromJson(c)).toList(),
-          ),
-          fileName:
-              'all_exams_${DateFormat('yyyyMMdd').format(DateTime.now())}.xlsx',
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error generating Excel: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  Future<void> _showPostponementDialog(
-      BuildContext context, WidgetRef ref, Exam exam) async {
-    print('Opening postponement dialog for exam: ${exam.examId}');
-    DateTime? selectedDate;
-
-    final result = await showDialog<Map<String, dynamic>>(
+    final result = await showDialog<bool>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('Postpone Exam'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                  'Current Date: ${DateFormat('MMM d, y').format(exam.examDate)}'),
-              const SizedBox(height: 16),
-              Text(
-                selectedDate == null
-                    ? 'No date selected'
-                    : 'New Date: ${DateFormat('MMM d, y').format(selectedDate!)}',
+      builder: (context) {
+        bool dialogHasChanges = false; // Local state for the dialog
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Edit Exam'),
+            content: SizedBox(
+              width: 400,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Course Info (non-editable)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.school,
+                                size: 20, color: Colors.blue),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${exam['course']['course_code']} - ${exam['course']['course_name']}',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Department: ${exam['course']['dept_id']}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Date Picker
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Exam Date'),
+                    subtitle:
+                        Text(DateFormat('EEEE, MMM d, y').format(selectedDate)),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.calendar_today),
+                      onPressed: () async {
+                        final date = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDate,
+                          firstDate: DateTime.now(),
+                          lastDate:
+                              DateTime.now().add(const Duration(days: 365)),
+                        );
+                        if (date != null && date != selectedDate) {
+                          setDialogState(() {
+                            selectedDate = date;
+                            dialogHasChanges = true;
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Session Dropdown
+                  DropdownButtonFormField<String>(
+                    value: selectedSession,
+                    decoration: const InputDecoration(
+                      labelText: 'Session',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                          value: 'MORNING', child: Text('MORNING')),
+                      DropdownMenuItem(
+                          value: 'AFTERNOON', child: Text('AFTERNOON')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null && value != selectedSession) {
+                        setDialogState(() {
+                          selectedSession = value;
+                          selectedTime = value == 'MORNING' ? '09:00' : '14:00';
+                          dialogHasChanges = true;
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  // Time Picker
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Time'),
+                    subtitle: Text(
+                      DateFormat('hh:mm a').format(
+                        DateFormat('HH:mm').parse(selectedTime),
+                      ),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.access_time),
+                      onPressed: () async {
+                        final time = await showTimePicker(
+                          context: context,
+                          initialTime: TimeOfDay.fromDateTime(
+                            DateFormat('HH:mm').parse(selectedTime),
+                          ),
+                          builder: (context, child) {
+                            return MediaQuery(
+                              data: MediaQuery.of(context).copyWith(
+                                alwaysUse24HourFormat: false,
+                              ),
+                              child: child!,
+                            );
+                          },
+                        );
+                        if (time != null) {
+                          final hour = time.hour;
+                          final isValidTime = selectedSession == 'MORNING'
+                              ? hour < 12
+                              : hour >= 12 && hour < 18;
+
+                          if (!isValidTime) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    selectedSession == 'MORNING'
+                                        ? 'Morning session must be before 12:00 PM'
+                                        : 'Afternoon session must be between 12:00 PM and 6:00 PM',
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                            return;
+                          }
+
+                          final newTime =
+                              '${hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+                          if (newTime != selectedTime) {
+                            setDialogState(() {
+                              selectedTime = newTime;
+                              dialogHasChanges = true;
+                            });
+                          }
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Duration Stepper
+                  Row(
+                    children: [
+                      const Text('Duration (mins):'),
+                      const SizedBox(width: 16),
+                      IconButton(
+                        icon: const Icon(Icons.remove),
+                        onPressed: selectedDuration <= 30
+                            ? null
+                            : () {
+                                setDialogState(() {
+                                  selectedDuration -= 30;
+                                  dialogHasChanges = true;
+                                });
+                              },
+                      ),
+                      Container(
+                        width: 50,
+                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                        child: TextFormField(
+                          initialValue: selectedDuration.toString(),
+                          textAlign: TextAlign.center,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 8),
+                          ),
+                          onChanged: (value) {
+                            final duration = int.tryParse(value);
+                            if (duration != null &&
+                                duration != selectedDuration) {
+                              setDialogState(() {
+                                selectedDuration = duration;
+                                dialogHasChanges = true;
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add),
+                        onPressed: selectedDuration >= 360
+                            ? null
+                            : () {
+                                setDialogState(() {
+                                  selectedDuration += 30;
+                                  dialogHasChanges = true;
+                                });
+                              },
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              ElevatedButton(
-                onPressed: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: DateTime.now(),
-                    firstDate: DateTime.now(),
-                    lastDate: DateTime.now().add(const Duration(days: 365)),
-                  );
-                  if (picked != null) {
-                    print('Selected new date: $picked');
-                    setState(() => selectedDate = picked);
-                  }
-                },
-                child: const Text('Select New Date'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: dialogHasChanges
+                    ? () => Navigator.pop(context, true)
+                    : null,
+                child: const Text('Save Changes'),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                print('Postponement cancelled');
-                Navigator.of(context).pop();
-              },
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: selectedDate == null
-                  ? null
-                  : () {
-                      print('Confirming postponement to: $selectedDate');
-                      Navigator.of(context).pop({'date': selectedDate});
-                    },
-              child: const Text('Confirm'),
-            ),
-          ],
-        ),
-      ),
+        );
+      },
     );
 
-    if (result != null && context.mounted) {
+    if (result == true && mounted) {
       try {
-        print(
-            'Attempting to postpone exam ${exam.examId} to ${result['date']}');
-        final repository = ref.read(examRepositoryProvider);
-        await repository.postponeExam(
-          exam.examId,
-          result['date'],
-          '', // Empty reason since we don't store it
+        // Show loading indicator
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: CircularProgressIndicator(),
+          ),
         );
-        print('Exam postponed successfully');
+
+        // Update exam in database
+        await Supabase.instance.client.from('exam').update({
+          'exam_date': selectedDate.toIso8601String().split('T')[0],
+          'session': selectedSession,
+          'time': selectedTime,
+          'duration': selectedDuration,
+        }).eq('exam_id', exam['exam_id']);
+
+        // Close loading dialog
+        if (mounted) {
+          Navigator.pop(context);
+        }
+
+        // Refresh exams
         ref.refresh(examsProvider);
 
-        if (context.mounted) {
+        // Show success message
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Exam postponed successfully'),
+              content: Text('Exam updated successfully'),
               backgroundColor: Colors.green,
             ),
           );
         }
-      } catch (e, stackTrace) {
-        print('Error postponing exam: $e');
-        print('Stack trace: $stackTrace');
-        if (context.mounted) {
+      } catch (e) {
+        // Close loading dialog
+        if (mounted) {
+          Navigator.pop(context);
+        }
+
+        // Show error message
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error postponing exam: $e'),
+              content: Text('Error updating exam: $e'),
               backgroundColor: Colors.red,
             ),
           );
@@ -280,8 +774,7 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
     }
   }
 
-  Future<void> _showDeleteConfirmation(
-      BuildContext context, WidgetRef ref, Exam exam) async {
+  Future<void> _showDeleteConfirmation(Exam exam) async {
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -302,12 +795,12 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
       ),
     );
 
-    if (result == true && context.mounted) {
+    if (result == true && mounted) {
       try {
         final repository = ref.read(examRepositoryProvider);
         await repository.deleteExam(exam.examId);
         ref.refresh(examsProvider);
-        if (context.mounted) {
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Exam deleted successfully'),
@@ -316,7 +809,7 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
           );
         }
       } catch (e) {
-        if (context.mounted) {
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Error deleting exam: $e'),
@@ -328,13 +821,572 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
     }
   }
 
-  @override
-  void initState() {
-    super.initState();
-    // Add listener to refresh exams when page gains focus
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.invalidate(examsProvider);
-    });
+  Future<void> _generateExcelForAllExams() async {
+    try {
+      setState(() => isLoading = true);
+
+      // Get all exams with course details
+      final response = await Supabase.instance.client
+          .from('exam')
+          .select(
+              '*, course:course_id(course_code, course_name, course_type, dept_id)')
+          .order('exam_date');
+
+      final exams = List<Map<String, dynamic>>.from(response);
+
+      if (exams.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No exams to export'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Convert to proper format
+      final formattedExams = exams.map((exam) {
+        final course = exam['course'] as Map<String, dynamic>;
+        return {
+          'exam_id': exam['exam_id'] as String,
+          'course_id': exam['course_id'] as String,
+          'course_name': course['course_name'] as String,
+          'dept_id': course['dept_id'] as String,
+          'exam_date': DateTime.parse(exam['exam_date'] as String),
+          'session': exam['session'] as String,
+          'time': exam['time'] as String,
+          'duration': int.parse(exam['duration'].toString()),
+        };
+      }).toList();
+
+      // Generate Excel file
+      final excelFile = excel.Excel.createExcel();
+      final sheet = excelFile.sheets[excelFile.getDefaultSheet()];
+      if (sheet == null) throw Exception('Failed to create Excel sheet');
+
+      // Add headers
+      final headers = [
+        'Exam ID',
+        'Course Code',
+        'Course Name',
+        'Department',
+        'Date',
+        'Session',
+        'Time',
+        'Duration (mins)'
+      ];
+
+      // Add headers with styling
+      for (var i = 0; i < headers.length; i++) {
+        final cell = sheet.cell(excel.CellIndex.indexByColumnRow(
+          columnIndex: i,
+          rowIndex: 0,
+        ));
+        cell.value = excel.TextCellValue(headers[i]);
+        cell.cellStyle = excel.CellStyle(
+          bold: true,
+          horizontalAlign: excel.HorizontalAlign.Center,
+        );
+      }
+
+      // Add data
+      for (var i = 0; i < formattedExams.length; i++) {
+        final exam = formattedExams[i];
+        final rowIndex = i + 1;
+
+        // Exam ID
+        sheet
+            .cell(excel.CellIndex.indexByColumnRow(
+              columnIndex: 0,
+              rowIndex: rowIndex,
+            ))
+            .value = excel.TextCellValue(exam['exam_id'] as String);
+
+        // Course Code
+        sheet
+            .cell(excel.CellIndex.indexByColumnRow(
+              columnIndex: 1,
+              rowIndex: rowIndex,
+            ))
+            .value = excel.TextCellValue(exam['course_id'] as String);
+
+        // Course Name
+        sheet
+            .cell(excel.CellIndex.indexByColumnRow(
+              columnIndex: 2,
+              rowIndex: rowIndex,
+            ))
+            .value = excel.TextCellValue(exam['course_name'] as String);
+
+        // Department
+        sheet
+            .cell(excel.CellIndex.indexByColumnRow(
+              columnIndex: 3,
+              rowIndex: rowIndex,
+            ))
+            .value = excel.TextCellValue(exam['dept_id'] as String);
+
+        // Date
+        sheet
+                .cell(excel.CellIndex.indexByColumnRow(
+                  columnIndex: 4,
+                  rowIndex: rowIndex,
+                ))
+                .value =
+            excel.TextCellValue(
+                DateFormat('MMM d, y').format(exam['exam_date'] as DateTime));
+
+        // Session
+        sheet
+            .cell(excel.CellIndex.indexByColumnRow(
+              columnIndex: 5,
+              rowIndex: rowIndex,
+            ))
+            .value = excel.TextCellValue(exam['session'] as String);
+
+        // Time
+        sheet
+            .cell(excel.CellIndex.indexByColumnRow(
+              columnIndex: 6,
+              rowIndex: rowIndex,
+            ))
+            .value = excel.TextCellValue(exam['time'] as String);
+
+        // Duration
+        sheet
+            .cell(excel.CellIndex.indexByColumnRow(
+              columnIndex: 7,
+              rowIndex: rowIndex,
+            ))
+            .value = excel.IntCellValue(exam['duration'] as int);
+      }
+
+      // Auto-fit columns
+      sheet.setColumnWidth(0, 15.0);
+      sheet.setColumnWidth(1, 15.0);
+      sheet.setColumnWidth(2, 40.0);
+      sheet.setColumnWidth(3, 15.0);
+      sheet.setColumnWidth(4, 15.0);
+      sheet.setColumnWidth(5, 15.0);
+      sheet.setColumnWidth(6, 15.0);
+      sheet.setColumnWidth(7, 15.0);
+
+      final excelBytes = excelFile.save();
+      if (excelBytes == null) throw Exception('Failed to generate Excel file');
+
+      if (!mounted) return;
+
+      // Show preview dialog
+      await showDialog(
+        context: context,
+        builder: (context) => preview.ExcelPreviewDialog(
+          excelBytes: excelBytes,
+          fileName:
+              'exam_schedule_${DateFormat('yyyyMMdd').format(DateTime.now())}.xlsx',
+        ),
+      );
+    } catch (e) {
+      developer.log('Error generating Excel: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating Excel: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _importFromExcel() async {
+    try {
+      developer.log('Starting Excel import process...');
+      setState(() => isLoading = true);
+
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['xlsx', 'xls'],
+        withData: true,
+      );
+
+      if (result == null) {
+        developer.log('No file selected');
+        return;
+      }
+
+      final file = result.files.first;
+      developer.log('File selected: ${file.name}');
+
+      if (file.bytes == null) {
+        throw Exception('Could not read file data');
+      }
+
+      final excelDoc = excel.Excel.decodeBytes(file.bytes!);
+      final sheet = excelDoc.tables[excelDoc.tables.keys.first]!;
+      developer.log('Sheet rows: ${sheet.rows.length}');
+
+      List<Map<String, dynamic>> importedExams = [];
+      List<String> errors = [];
+      List<String> warnings = [];
+
+      // Skip header row
+      for (var i = 1; i < sheet.rows.length; i++) {
+        final row = sheet.rows[i];
+        developer.log(
+            'Processing row $i: ${row.map((cell) => cell?.value).toList()}');
+
+        if (row.isEmpty || row[0]?.value == null) {
+          developer.log('Skipping empty row $i');
+          continue;
+        }
+
+        try {
+          final examId = row[0]!.value.toString().trim();
+          final courseId = row[1]!.value.toString().trim();
+          final courseName = row[2]!.value.toString().trim();
+          final department = row[3]!.value.toString().trim();
+          final dateStr = row[4]!.value.toString().trim();
+          final session = row[5]!.value.toString().trim().toUpperCase();
+          final time = row[6]!.value.toString().trim();
+          final durationStr = row[7]!.value.toString().trim();
+
+          developer.log(
+              'Row $i data: examId=$examId, courseId=$courseId, courseName=$courseName, department=$department, date=$dateStr, session=$session, time=$time, duration=$durationStr');
+
+          // Validate course ID
+          if (courseId.isEmpty) {
+            developer.log('Row $i: Empty course ID');
+            errors.add('Row ${i + 1}: Course ID is required');
+            continue;
+          }
+
+          // Parse date (expecting format like "Feb 20, 2025")
+          DateTime date;
+          try {
+            date = DateFormat('MMM d, y').parse(dateStr);
+            developer.log('Row $i: Successfully parsed date: $date');
+          } catch (e) {
+            developer.log('Row $i: Date parsing error: $e');
+            errors.add(
+                'Row ${i + 1}: Invalid date format. Use "MMM d, y" format (e.g., Feb 20, 2025)');
+            continue;
+          }
+
+          // Validate session
+          if (!['MORNING', 'AFTERNOON'].contains(session)) {
+            developer.log('Row $i: Invalid session: $session');
+            errors.add('Row ${i + 1}: Session must be MORNING or AFTERNOON');
+            continue;
+          }
+
+          // Validate time format and convert to HH:mm if needed
+          String normalizedTime = time;
+          if (time.contains(':')) {
+            final timeParts = time.split(':');
+            if (timeParts.length == 3) {
+              // Convert from HH:mm:ss to HH:mm
+              normalizedTime = '${timeParts[0]}:${timeParts[1]}';
+            }
+          }
+
+          final timeRegex = RegExp(r'^([01]?[0-9]|2[0-3]):[0-5][0-9]$');
+          if (!timeRegex.hasMatch(normalizedTime)) {
+            developer.log('Row $i: Invalid time format: $time');
+            errors.add(
+                'Row ${i + 1}: Invalid time format. Use HH:mm or HH:mm:ss');
+            continue;
+          }
+
+          // Validate time based on session
+          final hour = int.parse(normalizedTime.split(':')[0]);
+          if (session == 'MORNING' && hour >= 12) {
+            developer.log('Row $i: Invalid morning time: $normalizedTime');
+            errors.add('Row ${i + 1}: Morning session must be before 12:00');
+            continue;
+          } else if (session == 'AFTERNOON' && (hour < 12 || hour >= 18)) {
+            developer.log('Row $i: Invalid afternoon time: $normalizedTime');
+            errors.add(
+                'Row ${i + 1}: Afternoon session must be between 12:00 and 18:00');
+            continue;
+          }
+
+          // Validate duration
+          final duration = int.tryParse(durationStr);
+          if (duration == null || duration < 30 || duration > 360) {
+            developer.log('Row $i: Invalid duration: $durationStr');
+            errors.add(
+                'Row ${i + 1}: Duration must be between 30 and 360 minutes');
+            continue;
+          }
+
+          // Check if date is in the past
+          if (date.isBefore(DateTime.now())) {
+            developer.log('Row $i: Past date warning: $date');
+            warnings.add('Row ${i + 1}: Exam date is in the past');
+          }
+
+          // Check if date is a Sunday
+          if (date.weekday == DateTime.sunday) {
+            developer.log('Row $i: Sunday warning');
+            warnings.add('Row ${i + 1}: Exam is scheduled on a Sunday');
+          }
+
+          importedExams.add({
+            'courseId': courseId,
+            'date': date,
+            'session': session,
+            'time': normalizedTime, // Use normalized time without seconds
+            'duration': duration,
+            'rowNumber': i + 1,
+          });
+          developer.log('Row $i: Successfully added to importedExams');
+        } catch (e) {
+          developer.log('Row $i: Processing error: $e');
+          errors.add('Row ${i + 1}: ${e.toString()}');
+        }
+      }
+
+      developer.log(
+          'Import summary: ${importedExams.length} exams, ${errors.length} errors, ${warnings.length} warnings');
+
+      if (importedExams.isEmpty) {
+        throw Exception('No valid exams found in the file');
+      }
+
+      // Check for existing exams
+      final existingExams = await Supabase.instance.client
+          .from('exam')
+          .select('course_id, exam_date')
+          .in_('course_id', importedExams.map((e) => e['courseId']).toList());
+
+      final existingExamMap = {
+        for (var exam in existingExams)
+          '${exam['course_id']}_${exam['exam_date']}': exam
+      };
+
+      // Check for duplicates within the import
+      final seenCombos = <String>{};
+      for (var exam in importedExams) {
+        final combo =
+            '${exam['courseId']}_${exam['date'].toIso8601String().split('T')[0]}';
+        if (seenCombos.contains(combo)) {
+          warnings.add(
+              'Row ${exam['rowNumber']}: Duplicate entry for ${exam['courseId']} on same date');
+        }
+        seenCombos.add(combo);
+
+        if (existingExamMap.containsKey(combo)) {
+          warnings.add(
+              'Row ${exam['rowNumber']}: ${exam['courseId']} already has an exam on ${DateFormat('MMM d, y').format(exam['date'])}');
+        }
+      }
+
+      if (!mounted) return;
+
+      // Show preview dialog
+      final dialogResult = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Import Preview'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Total Exams: ${importedExams.length}',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        if (warnings.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            'Warnings (${warnings.length}):',
+                            style: TextStyle(
+                              color: Colors.orange.shade900,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          ...warnings.map((warning) => Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.warning_amber_rounded,
+                                        size: 16,
+                                        color: Colors.orange.shade700),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        warning,
+                                        style: TextStyle(
+                                          color: Colors.orange.shade700,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )),
+                        ],
+                        if (errors.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            'Errors (${errors.length}):',
+                            style: TextStyle(
+                              color: Colors.red.shade900,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          ...errors.map((error) => Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.error_outline,
+                                        size: 16, color: Colors.red.shade700),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        error,
+                                        style: TextStyle(
+                                          color: Colors.red.shade700,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Preview:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...importedExams.map((exam) {
+                    final hasWarning = warnings.any((w) =>
+                        w.contains(exam['courseId']) &&
+                        w.contains(
+                            DateFormat('MMM d, y').format(exam['date'])));
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      color: hasWarning ? Colors.orange.shade50 : null,
+                      child: ListTile(
+                        title: Row(
+                          children: [
+                            Text(exam['courseId']),
+                            if (hasWarning) ...[
+                              const SizedBox(width: 8),
+                              Icon(Icons.warning_amber_rounded,
+                                  size: 16, color: Colors.orange.shade700),
+                            ],
+                          ],
+                        ),
+                        subtitle: Text(
+                          '${DateFormat('MMM d, y').format(exam['date'])} - ${exam['session']} - ${exam['time']} (${exam['duration']} mins)',
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed:
+                  errors.isEmpty ? () => Navigator.of(context).pop(true) : null,
+              child: const Text('Import'),
+            ),
+          ],
+        ),
+      );
+
+      if (dialogResult == true && mounted) {
+        // Show loading indicator
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+
+        // Import exams
+        for (var exam in importedExams) {
+          final shortId = (DateTime.now().millisecondsSinceEpoch % 10000)
+              .toString()
+              .padLeft(4, '0');
+          await Supabase.instance.client.from('exam').insert({
+            'exam_id': 'EX${exam['courseId']}$shortId',
+            'course_id': exam['courseId'],
+            'exam_date': exam['date'].toIso8601String().split('T')[0],
+            'session': exam['session'],
+            'time': exam['time'],
+            'duration': exam['duration'],
+          });
+        }
+
+        // Close loading dialog
+        if (mounted) {
+          Navigator.pop(context);
+        }
+
+        // Refresh exams
+        ref.refresh(examsProvider);
+
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content:
+                  Text('Successfully imported ${importedExams.length} exams'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error importing exams: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
+    }
   }
 
   @override
@@ -346,28 +1398,79 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
       appBar: AppBar(
         title: const Text('Exam Management'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.chair),
-            tooltip: 'Generate Seating',
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Seating arrangement feature coming soon'),
-                  backgroundColor: Colors.orange,
-                ),
-              );
+          // Add select all checkbox
+          examsAsync.when(
+            data: (exams) {
+              final filteredExams = _filterAndSortExams(exams);
+              final allCurrentlyShownSelected = filteredExams
+                  .every((exam) => selectedExams.contains(exam['exam_id']));
+              final hasFilteredExams = filteredExams.isNotEmpty;
+
+              return hasFilteredExams
+                  ? Row(
+                      children: [
+                        Text(
+                          'Select All',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        Checkbox(
+                          value: allCurrentlyShownSelected,
+                          tristate: true,
+                          onChanged: (bool? value) {
+                            setState(() {
+                              if (value ?? false) {
+                                selectedExams.addAll(
+                                  filteredExams
+                                      .map((e) => e['exam_id'].toString()),
+                                );
+                              } else {
+                                selectedExams.removeAll(
+                                  filteredExams
+                                      .map((e) => e['exam_id'].toString()),
+                                );
+                              }
+                            });
+                          },
+                        ),
+                      ],
+                    )
+                  : const SizedBox.shrink();
             },
+            loading: () => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
+          if (selectedExams.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.delete),
+              onPressed: _deleteSelectedExams,
+              tooltip: 'Delete Selected Exams',
+            ),
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: _showManualGenerationDialog,
+            tooltip: 'Add Exam',
           ),
           IconButton(
             icon: const Icon(Icons.upload_file),
             tooltip: 'Import Excel',
-            onPressed: () => _importFromExcel(context),
+            onPressed: _importFromExcel,
           ),
-          IconButton(
-            icon: const Icon(Icons.table_chart),
-            tooltip: 'Generate Excel',
-            onPressed: () => _generateExcelForAllExams(context, ref),
+          examsAsync.when(
+            data: (exams) => IconButton(
+              icon: const Icon(Icons.download),
+              tooltip: 'Generate Excel',
+              onPressed: exams.isEmpty ? null : _generateExcelForAllExams,
+            ),
+            loading: () => const IconButton(
+              icon: Icon(Icons.download),
+              onPressed: null,
+            ),
+            error: (_, __) => const IconButton(
+              icon: Icon(Icons.download),
+              onPressed: null,
+            ),
           ),
+          const SizedBox(width: 16),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(140),
@@ -491,56 +1594,116 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
 
               final filteredExams = _filterAndSortExams(exams);
 
-              return ListView.builder(
-                itemCount: filteredExams.length,
-                padding: const EdgeInsets.all(16),
-                itemBuilder: (context, index) {
-                  final exam = Exam.fromJson(filteredExams[index]);
-                  final course = courseMap[exam.courseId];
+              return Scrollbar(
+                controller: _verticalScrollController,
+                child: SingleChildScrollView(
+                  controller: _verticalScrollController,
+                  child: Scrollbar(
+                    controller: _horizontalScrollController,
+                    notificationPredicate: (notification) =>
+                        notification.depth == 0,
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
+                      controller: _horizontalScrollController,
+                      scrollDirection: Axis.horizontal,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minWidth: MediaQuery.of(context).size.width,
+                        ),
+                        child: DataTable(
+                          columnSpacing: 28.0,
+                          horizontalMargin: 20.0,
+                          headingRowColor: MaterialStateProperty.all(
+                            Theme.of(context).colorScheme.surfaceVariant,
+                          ),
+                          columns: const [
+                            DataColumn(label: Text('Exam ID')),
+                            DataColumn(label: Expanded(child: Text('Course'))),
+                            DataColumn(label: Text('Date')),
+                            DataColumn(label: Text('Session')),
+                            DataColumn(label: Text('Time')),
+                            DataColumn(label: Text('Duration (mins)')),
+                            DataColumn(label: Text('Status')),
+                            DataColumn(label: Text('Actions')),
+                          ],
+                          rows: filteredExams.map((exam) {
+                            final course = courseMap[exam['course_id']];
+                            final examDate = DateTime.parse(exam['exam_date']);
+                            final isSelected =
+                                selectedExams.contains(exam['exam_id']);
 
-                  return Card(
-                    margin: const EdgeInsets.symmetric(vertical: 8),
-                    child: ListTile(
-                      title: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                                '${exam.courseId} - ${course?['course_name'] ?? 'Unknown Course'}'),
-                          ),
-                          _buildExamStatusBadge(exam.examDate),
-                        ],
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                              'Department: ${course?['dept_id'] ?? 'Unknown Dept'}'),
-                          Text(
-                              'Date: ${DateFormat('MMM d, y').format(exam.examDate)}'),
-                          Text('Session: ${exam.session}, Time: ${exam.time}'),
-                          Text('Duration: ${exam.duration} mins'),
-                        ],
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.calendar_today),
-                            tooltip: 'Postpone',
-                            onPressed: () =>
-                                _showPostponementDialog(context, ref, exam),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete),
-                            tooltip: 'Delete',
-                            onPressed: () =>
-                                _showDeleteConfirmation(context, ref, exam),
-                          ),
-                        ],
+                            return DataRow(
+                              selected: isSelected,
+                              onSelectChanged: (selected) {
+                                setState(() {
+                                  if (selected == true) {
+                                    selectedExams.add(exam['exam_id']);
+                                  } else {
+                                    selectedExams.remove(exam['exam_id']);
+                                  }
+                                });
+                              },
+                              cells: [
+                                DataCell(Text(exam['exam_id'])),
+                                DataCell(
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        '${course?['course_code']} - ${course?['course_name']}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Department: ${course?['dept_id']}',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                DataCell(Text(
+                                    DateFormat('MMM d, y').format(examDate))),
+                                DataCell(Text(exam['session'])),
+                                DataCell(Text(
+                                  DateFormat('hh:mm a').format(
+                                    DateFormat('HH:mm').parse(exam['time']),
+                                  ),
+                                )),
+                                DataCell(Text('${exam['duration']}')),
+                                DataCell(_buildStatusBadge(examDate)),
+                                DataCell(
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.edit),
+                                        onPressed: () => _showEditDialog(exam),
+                                        tooltip: 'Edit',
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete),
+                                        onPressed: () =>
+                                            _showDeleteConfirmation(
+                                          Exam.fromJson(exam),
+                                        ),
+                                        tooltip: 'Delete',
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            );
+                          }).toList(),
+                        ),
                       ),
                     ),
-                  );
-                },
+                  ),
+                ),
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
@@ -557,512 +1720,69 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
     );
   }
 
-  Future<void> _importFromExcel(BuildContext context) async {
-    try {
-      print('Starting Excel import process...');
-      print('Opening file picker...');
-
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['xlsx'],
-        withData: true,
-        onFileLoading: (status) => print('File loading status: $status'),
-      );
-
-      if (result == null) {
-        print('No file selected');
-        return;
-      }
-
-      final file = result.files.first;
-      print('File selected: ${file.name}');
-      print('File size: ${file.size} bytes');
-      print('File extension: ${file.extension}');
-      print('Bytes available: ${file.bytes != null}');
-
-      if (file.bytes == null) {
-        throw Exception('Could not read file data');
-      }
-
-      print('First few bytes: ${file.bytes!.take(10).toList()}');
-      print('Attempting to decode Excel file...');
-
-      try {
-        final excelFile = excel.Excel.decodeBytes(file.bytes!);
-        print('Excel file decoded successfully');
-        print('Available sheets: ${excelFile.sheets.keys.join(', ')}');
-
-        final defaultSheet = excelFile.getDefaultSheet();
-        print('Default sheet: $defaultSheet');
-
-        final sheet = excelFile.sheets[defaultSheet];
-        if (sheet == null) {
-          throw Exception('Excel file has no sheets');
-        }
-
-        print('Sheet found. Row count: ${sheet.rows.length}');
-        if (sheet.rows.isNotEmpty) {
-          print(
-              'First row headers: ${sheet.rows.first.map((cell) => cell?.value).join(', ')}');
-        }
-
-        List<Map<String, dynamic>> validExams = [];
-        List<Map<String, dynamic>> invalidExams = [];
-        bool isFirstRow = true;
-
-        // Get list of valid course IDs
-        final courseRepository = ref.read(courseRepositoryProvider);
-        final courses = await courseRepository.getCourses();
-        final validCourseIds =
-            courses.map((c) => c['course_code'].toString()).toSet();
-
-        for (var row in sheet.rows) {
-          if (isFirstRow) {
-            isFirstRow = false;
-            continue;
-          }
-
-          if (row.isEmpty || row[0]?.value == null) {
-            print('Skipping empty row');
-            continue;
-          }
-
-          try {
-            print(
-                'Processing row values: ${row.map((cell) => cell?.value).join(', ')}');
-
-            final courseId = row[0]!.value.toString().trim();
-            final dateStr = row[1]!.value.toString().trim();
-            final session = row[2]!.value.toString().trim().toUpperCase();
-            final time = row[3]!.value.toString().trim();
-            final duration = int.parse(row[4]!.value.toString().trim());
-
-            print(
-                'Parsed row: CourseID=$courseId, Date=$dateStr, Session=$session, Time=$time, Duration=$duration');
-
-            final examDate = DateTime.parse(dateStr);
-            final examId = _generateExamId(courseId);
-            final now = DateTime.now().toIso8601String();
-
-            final exam = {
-              'exam_id': examId,
-              'course_id': courseId,
-              'exam_date': examDate.toIso8601String(),
-              'session': session,
-              'time': time,
-              'duration': duration,
-              'created_at': now,
-              'updated_at': now,
-            };
-
-            // Validate course ID
-            if (!validCourseIds.contains(courseId)) {
-              print('Invalid course ID: $courseId');
-              invalidExams.add({...exam, 'error': 'Course does not exist'});
-              continue;
-            }
-
-            // Validate session
-            if (!['MORNING', 'AFTERNOON'].contains(session)) {
-              print('Invalid session: $session');
-              invalidExams.add({
-                ...exam,
-                'error': 'Invalid session (must be MORNING or AFTERNOON)'
-              });
-              continue;
-            }
-
-            // Validate time format
-            final timeRegex =
-                RegExp(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$');
-            if (!timeRegex.hasMatch(time)) {
-              print('Invalid time format: $time');
-              invalidExams.add(
-                  {...exam, 'error': 'Invalid time format (must be HH:MM:SS)'});
-              continue;
-            }
-
-            // Validate duration
-            if (duration <= 0 || duration > 240) {
-              print('Invalid duration: $duration');
-              invalidExams.add({
-                ...exam,
-                'error': 'Invalid duration (must be between 1 and 240 minutes)'
-              });
-              continue;
-            }
-
-            validExams.add(exam);
-            print('Added exam: $examId');
-          } catch (e, stack) {
-            print('Error processing row: $e');
-            print('Stack trace: $stack');
-          }
-        }
-
-        if (validExams.isEmpty && invalidExams.isEmpty) {
-          throw Exception('No exams found in Excel file');
-        }
-
-        print(
-            'Successfully parsed ${validExams.length} valid exams and found ${invalidExams.length} invalid exams');
-
-        // Show preview dialog
-        if (mounted) {
-          final result = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Preview Imported Exams'),
-              content: SizedBox(
-                width: double.maxFinite,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (validExams.isNotEmpty) ...[
-                        Text(
-                            'Found ${validExams.length} valid exams to import:',
-                            style:
-                                const TextStyle(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 16),
-                        ...validExams.map((exam) => Card(
-                              child: ListTile(
-                                leading: const Icon(Icons.check_circle,
-                                    color: Colors.green),
-                                title: Text(exam['course_id']),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                        'Date: ${DateFormat('MMM d, y').format(DateTime.parse(exam['exam_date']))}'),
-                                    Text(
-                                        'Session: ${exam['session']}, Time: ${exam['time']}'),
-                                    Text('Duration: ${exam['duration']} mins'),
-                                  ],
-                                ),
-                              ),
-                            )),
-                      ],
-                      if (invalidExams.isNotEmpty) ...[
-                        const SizedBox(height: 24),
-                        Text('Found ${invalidExams.length} invalid exams:',
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.red)),
-                        const SizedBox(height: 16),
-                        ...invalidExams.map((exam) => Card(
-                              color: Colors.red.shade50,
-                              child: ListTile(
-                                leading:
-                                    const Icon(Icons.error, color: Colors.red),
-                                title: Text(exam['course_id']),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                        'Date: ${DateFormat('MMM d, y').format(DateTime.parse(exam['exam_date']))}'),
-                                    Text(
-                                        'Session: ${exam['session']}, Time: ${exam['time']}'),
-                                    Text('Duration: ${exam['duration']} mins'),
-                                    const SizedBox(height: 4),
-                                    Text('Error: ${exam['error']}',
-                                        style: const TextStyle(
-                                            color: Colors.red,
-                                            fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                              ),
-                            )),
-                        const SizedBox(height: 16),
-                        const Text(
-                            'Please fix these issues in the Excel file and try again.',
-                            style: TextStyle(fontStyle: FontStyle.italic)),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: invalidExams.isEmpty && validExams.isNotEmpty
-                      ? () => Navigator.of(context).pop(true)
-                      : null,
-                  child: Text(invalidExams.isEmpty
-                      ? 'Import ${validExams.length} Exams'
-                      : 'Fix Errors to Import'),
-                ),
-              ],
+  Future<void> _deleteSelectedExams() async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Selected Exams'),
+        content: Text(
+            'Are you sure you want to delete ${selectedExams.length} selected exams?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red,
             ),
-          );
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
 
-          if (result == true && mounted) {
-            print('Importing exams to database...');
-            final repository = ref.read(examRepositoryProvider);
-            await repository.scheduleExams(
-              validExams.map((e) => Exam.fromJson(e)).toList(),
-            );
+    if (confirmed != true) return;
 
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Exams imported successfully'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-              ref.refresh(examsProvider);
-            }
-          }
-        }
-      } catch (e, stack) {
-        print('Error decoding Excel: $e');
-        print('Stack trace: $stack');
-        throw Exception('Failed to decode Excel file: $e');
+    setState(() => isLoading = true);
+
+    try {
+      // Delete exams from Supabase
+      await Supabase.instance.client
+          .from('exam')
+          .delete()
+          .in_('exam_id', selectedExams.toList());
+
+      // Clear selection and reload exams
+      setState(() {
+        selectedExams.clear();
+      });
+      await _loadExams();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Selected exams deleted successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
       }
-    } catch (e, stack) {
-      print('Error importing from Excel: $e');
-      print('Stack trace: $stack');
+    } catch (error) {
+      developer.log('Error deleting exams: $error');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error importing from Excel: $e'),
+            content: Text('Error deleting exams: $error'),
             backgroundColor: Colors.red,
           ),
         );
       }
+    } finally {
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
-  }
-
-  String _generateExamId(String courseId) {
-    final timestamp = DateTime.now().millisecondsSinceEpoch % 100;
-    final id = 'EX$courseId${timestamp.toString().padLeft(2, '0')}';
-    print('Generated exam ID: $id (length: ${id.length})');
-    return id;
-  }
-}
-
-class _PostponeExamDialog extends ConsumerStatefulWidget {
-  final String examId;
-  final DateTime currentDate;
-
-  const _PostponeExamDialog({
-    required this.examId,
-    required this.currentDate,
-  });
-
-  @override
-  _PostponeExamDialogState createState() => _PostponeExamDialogState();
-}
-
-class _PostponeExamDialogState extends ConsumerState<_PostponeExamDialog> {
-  DateTime? _selectedDate;
-  final _reasonController = TextEditingController();
-  bool _isLoading = false;
-
-  bool get _canConfirm =>
-      _selectedDate != null && _reasonController.text.trim().isNotEmpty;
-
-  @override
-  void dispose() {
-    _reasonController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: widget.currentDate,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-
-    if (picked != null && picked != _selectedDate) {
-      setState(() {
-        _selectedDate = picked;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Postpone Exam'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListTile(
-            title: Text(_selectedDate == null
-                ? 'Select new date'
-                : DateFormat('MMM d, y').format(_selectedDate!)),
-            trailing: const Icon(Icons.calendar_today),
-            onTap: () => _selectDate(context),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _reasonController,
-            decoration: const InputDecoration(
-              labelText: 'Reason for postponement',
-              border: OutlineInputBorder(),
-            ),
-            maxLines: 3,
-            onChanged: (_) => setState(() {}), // Rebuild to update button state
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: _isLoading || !_canConfirm
-              ? null
-              : () async {
-                  setState(() => _isLoading = true);
-                  try {
-                    await ref.read(examRepositoryProvider).postponeExam(
-                          widget.examId,
-                          _selectedDate!,
-                          _reasonController.text.trim(),
-                        );
-                    if (mounted) {
-                      Navigator.of(context).pop(true);
-                    }
-                  } catch (e) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Failed to postpone exam: $e')),
-                      );
-                    }
-                  } finally {
-                    if (mounted) {
-                      setState(() => _isLoading = false);
-                    }
-                  }
-                },
-          child: _isLoading
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Confirm'),
-        ),
-      ],
-    );
-  }
-}
-
-class _AnimatedTodayBadge extends StatefulWidget {
-  const _AnimatedTodayBadge();
-
-  @override
-  State<_AnimatedTodayBadge> createState() => _AnimatedTodayBadgeState();
-}
-
-class _AnimatedTodayBadgeState extends State<_AnimatedTodayBadge>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _animation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(seconds: 1),
-      vsync: this,
-    )..repeat(reverse: true);
-    _animation = Tween<double>(begin: 0.2, end: 0.6).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _animation,
-      builder: (context, child) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.orange.withOpacity(_animation.value),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.orange),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.warning_amber_rounded,
-              color: Colors.orange,
-              size: 16,
-            ),
-            SizedBox(width: 4),
-            Text(
-              'Today',
-              style: TextStyle(
-                color: Colors.orange,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-Widget _buildStatusBadge(DateTime examDate) {
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
-  final examDay = DateTime(examDate.year, examDate.month, examDate.day);
-
-  if (examDay.isBefore(today)) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.red.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.red.shade200),
-      ),
-      child: const Text(
-        'Past',
-        style: TextStyle(
-          color: Colors.red,
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  } else if (examDay.isAfter(today)) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.green.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.green.shade200),
-      ),
-      child: const Text(
-        'Upcoming',
-        style: TextStyle(
-          color: Colors.green,
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  } else {
-    return const _AnimatedTodayBadge();
   }
 }

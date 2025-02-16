@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:office_pal/features/controller/presentation/pages/exam_scheduling_page.dart';
+import 'package:office_pal/features/controller/presentation/pages/exam_creator_page.dart';
 import 'package:office_pal/features/controller/presentation/providers/exam_provider.dart';
 import 'package:office_pal/features/controller/presentation/providers/holiday_provider.dart';
 import 'package:office_pal/features/controller/domain/services/holiday_service.dart';
@@ -321,13 +321,13 @@ class _ControllerDashboardPageState
                 children: [
                   _buildDashboardCard(
                     context,
-                    title: 'Exam Scheduling',
+                    title: 'Create Exams',
                     icon: Icons.calendar_month,
                     color: Colors.blue,
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (context) => const ExamSchedulingPage(),
+                          builder: (context) => const ExamCreatorPage(),
                         ),
                       );
                     },

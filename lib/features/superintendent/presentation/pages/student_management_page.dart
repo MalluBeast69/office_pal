@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:excel/excel.dart' as excel;
 import 'dart:developer' as developer;
 import 'student_exam_registration_page.dart';
 
@@ -211,7 +212,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
               subtitle: const Text('Add new students to the system'),
               onTap: () {
                 Navigator.pop(context);
-                importFromCsv(importType: 'students');
+                _showFileTypeDialog('students');
               },
             ),
             const Divider(),
@@ -221,7 +222,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
               subtitle: const Text('Register students for courses'),
               onTap: () {
                 Navigator.pop(context);
-                importFromCsv(importType: 'registrations');
+                _showFileTypeDialog('registrations');
               },
             ),
           ],
@@ -230,63 +231,329 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
     );
   }
 
-  Future<void> importFromCsv({required String importType}) async {
+  void _showFileTypeDialog(String importType) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Choose File Type'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.description),
+              title: const Text('CSV File'),
+              onTap: () {
+                Navigator.pop(context);
+                if (importType == 'students') {
+                  _importStudents(fileType: 'csv');
+                } else {
+                  _importRegistrations(fileType: 'csv');
+                }
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.table_chart),
+              title: const Text('Excel File'),
+              onTap: () {
+                Navigator.pop(context);
+                if (importType == 'students') {
+                  _importStudents(fileType: 'excel');
+                } else {
+                  _importRegistrations(fileType: 'excel');
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _importStudents({required String fileType}) async {
     try {
+      setState(() => isLoading = true);
+
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['csv'],
+        allowedExtensions: fileType == 'csv' ? ['csv'] : ['xlsx', 'xls'],
         withData: true,
       );
 
-      developer.log('File picker result: ${result?.files.length ?? 0} files');
+      if (result == null || result.files.isEmpty) return;
 
-      if (result != null && result.files.isNotEmpty) {
-        final file = result.files.first;
-        developer.log('File name: ${file.name}');
-        developer.log('File size: ${file.size} bytes');
+      final file = result.files.first;
+      developer.log('Selected file: ${file.name}');
 
-        if (file.bytes == null) {
-          throw Exception('No file content');
-        }
+      if (file.bytes == null) throw Exception('No file content');
 
+      List<Map<String, dynamic>> students = [];
+
+      if (fileType == 'csv') {
         final csvString = String.fromCharCodes(file.bytes!);
-        developer.log('CSV content: \n$csvString');
-
         final rows = csvString.split('\n');
-        if (rows.isEmpty) {
-          throw Exception('Empty file');
+        if (rows.isEmpty) throw Exception('Empty file');
+
+        developer.log('CSV first row: "${rows.first}"');
+
+        // Parse header and remove BOM if present
+        final header = rows.first
+            .trim()
+            .replaceAll('\uFEFF', '') // Remove Unicode BOM
+            .replaceAll('ï»¿', '') // Remove BOM character
+            .split(',')
+            .map((h) => h.trim().replaceAll('"', ''))
+            .toList();
+        developer.log('Split headers: $header');
+
+        if (!_validateStudentHeaders(header)) {
+          throw Exception(
+              'Invalid CSV format. Expected headers: student_reg_no,student_name,dept_id,semester');
         }
 
-        // Parse header to verify format
-        final header = rows.first.trim().split(',');
+        // Parse data rows
+        for (final row in rows.skip(1).where((row) => row.trim().isNotEmpty)) {
+          // Split by comma but preserve commas within quotes
+          final columns = _splitCsvRow(row);
+          developer.log('Parsed row: $columns');
 
-        if (importType == 'students') {
-          await _importStudents(header, rows);
-        } else {
-          await _importRegistrations(header, rows);
+          if (columns.length >= 4) {
+            final semester = columns[3].trim().replaceAll('"', '');
+            developer.log('Parsing semester value: "$semester"');
+
+            students.add({
+              'student_reg_no': columns[0].trim().replaceAll('"', ''),
+              'student_name': columns[1].trim().replaceAll('"', ''),
+              'dept_id': columns[2].trim().replaceAll('"', ''),
+              'semester': int.parse(semester),
+            });
+          }
+        }
+      } else {
+        // Parse Excel file
+        final excelFile = excel.Excel.decodeBytes(file.bytes!);
+        final sheet = excelFile.tables[excelFile.getDefaultSheet()!]!;
+
+        // Validate header
+        final headerRow = sheet.rows.first;
+        if (!_validateStudentHeaders(
+            headerRow.map((cell) => cell?.value.toString() ?? '').toList())) {
+          throw Exception(
+              'Invalid Excel format. Expected headers: student_reg_no,student_name,dept_id,semester');
+        }
+
+        // Parse data rows
+        for (var row in sheet.rows.skip(1)) {
+          if (row.any((cell) => cell?.value != null)) {
+            students.add({
+              'student_reg_no': row[0]?.value.toString().trim() ?? '',
+              'student_name': row[1]?.value.toString().trim() ?? '',
+              'dept_id': row[2]?.value.toString().trim() ?? '',
+              'semester': int.parse(row[3]?.value.toString().trim() ?? '0'),
+            });
+          }
         }
       }
+
+      await _validateAndImportStudents(students);
     } catch (error) {
-      developer.log('Error importing CSV: $error', error: error);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to import CSV: ${error.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      setState(() => isLoading = false);
+      developer.log('Error importing students: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to import students: ${error.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
   }
 
-  Future<void> _importStudents(List<String> header, List<String> rows) async {
-    // Validate header format
-    if (header.length != 4 ||
-        header[0] != 'student_reg_no' ||
-        header[1] != 'student_name' ||
-        header[2] != 'dept_id' ||
-        header[3] != 'semester') {
-      throw Exception(
-          'Invalid CSV format. Expected headers: student_reg_no,student_name,dept_id,semester');
+  Future<void> _importRegistrations({required String fileType}) async {
+    try {
+      setState(() => isLoading = true);
+
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: fileType == 'csv' ? ['csv'] : ['xlsx', 'xls'],
+        withData: true,
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.first;
+      developer.log('Selected file: ${file.name}');
+
+      if (file.bytes == null) throw Exception('No file content');
+
+      List<Map<String, dynamic>> registrations = [];
+
+      if (fileType == 'csv') {
+        final csvString = String.fromCharCodes(file.bytes!);
+        final rows = csvString.split('\n');
+        if (rows.isEmpty) throw Exception('Empty file');
+
+        developer.log('CSV first row: "${rows.first}"');
+
+        // Parse header and remove BOM if present
+        final header = rows.first
+            .trim()
+            .replaceAll('\uFEFF', '') // Remove Unicode BOM
+            .replaceAll('ï»¿', '') // Remove BOM character
+            .split(',')
+            .map((h) => h.trim().replaceAll('"', ''))
+            .toList();
+        developer.log('Split headers: $header');
+
+        if (!_validateRegistrationHeaders(header)) {
+          throw Exception(
+              'Invalid CSV format. Expected headers: student_reg_no,course_code,is_regular');
+        }
+
+        // Parse data rows
+        for (final row in rows.skip(1).where((row) => row.trim().isNotEmpty)) {
+          final columns = _splitCsvRow(row);
+          developer.log('Parsed row: $columns');
+
+          if (columns.length >= 3) {
+            registrations.add({
+              'student_reg_no': columns[0].trim(),
+              'course_code': columns[1].trim(),
+              'is_reguler': columns[2].trim().toLowerCase() == 'true',
+            });
+          }
+        }
+      } else {
+        // Parse Excel file
+        final excelFile = excel.Excel.decodeBytes(file.bytes!);
+        final sheet = excelFile.tables[excelFile.getDefaultSheet()!]!;
+
+        // Validate header
+        final headerRow = sheet.rows.first;
+        if (!_validateRegistrationHeaders(
+            headerRow.map((cell) => cell?.value.toString() ?? '').toList())) {
+          throw Exception(
+              'Invalid Excel format. Expected headers: student_reg_no,course_code,is_regular');
+        }
+
+        // Parse data rows
+        for (var row in sheet.rows.skip(1)) {
+          if (row.any((cell) => cell?.value != null)) {
+            registrations.add({
+              'student_reg_no': row[0]?.value.toString().trim() ?? '',
+              'course_code': row[1]?.value.toString().trim() ?? '',
+              'is_reguler':
+                  row[2]?.value.toString().trim().toLowerCase() == 'true',
+            });
+          }
+        }
+      }
+
+      await _validateAndImportRegistrations(registrations);
+    } catch (error) {
+      developer.log('Error importing registrations: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                Text('Failed to import registrations: ${error.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
+    }
+  }
+
+  bool _validateStudentHeaders(List<String> headers) {
+    final requiredHeaders = [
+      'student_reg_no',
+      'student_name',
+      'dept_id',
+      'semester'
+    ];
+
+    // Clean headers by removing quotes, whitespace, and BOM character
+    final cleanedHeaders = headers.map((h) {
+      final cleaned = h
+          .trim()
+          .toLowerCase()
+          .replaceAll('"', '')
+          .replaceAll("'", '')
+          .replaceAll('ï»¿', '') // Remove BOM character
+          .replaceAll('\uFEFF', ''); // Remove Unicode BOM
+      developer.log('Original header: "$h" -> Cleaned header: "$cleaned"');
+      return cleaned;
+    }).toList();
+
+    developer.log('Required headers: $requiredHeaders');
+    developer.log('Cleaned headers: $cleanedHeaders');
+
+    // Check if we have enough headers
+    if (cleanedHeaders.length < requiredHeaders.length) {
+      developer.log(
+          'Not enough headers: expected ${requiredHeaders.length}, got ${cleanedHeaders.length}');
+      return false;
+    }
+
+    // Check each required header
+    for (final required in requiredHeaders) {
+      final found = cleanedHeaders.contains(required);
+      developer
+          .log('Checking for "$required": ${found ? "Found" : "Not found"}');
+      if (!found) return false;
+    }
+
+    return true;
+  }
+
+  bool _validateRegistrationHeaders(List<String> headers) {
+    final requiredHeaders = ['student_reg_no', 'course_code', 'is_regular'];
+
+    // Clean headers by removing quotes and whitespace
+    final cleanedHeaders = headers.map((h) {
+      final cleaned = h
+          .trim()
+          .toLowerCase()
+          .replaceAll('"', '')
+          .replaceAll("'", '')
+          .replaceAll('is_reguler', 'is_regular'); // Handle both spellings
+      developer.log('Original header: "$h" -> Cleaned header: "$cleaned"');
+      return cleaned;
+    }).toList();
+
+    developer.log('Required headers: $requiredHeaders');
+    developer.log('Cleaned headers: $cleanedHeaders');
+
+    // Check if we have enough headers
+    if (cleanedHeaders.length < requiredHeaders.length) {
+      developer.log(
+          'Not enough headers: expected ${requiredHeaders.length}, got ${cleanedHeaders.length}');
+      return false;
+    }
+
+    // Check each required header
+    for (final required in requiredHeaders) {
+      final found = cleanedHeaders.contains(required);
+      developer
+          .log('Checking for "$required": ${found ? "Found" : "Not found"}');
+      if (!found) return false;
+    }
+
+    return true;
+  }
+
+  Future<void> _validateAndImportStudents(
+      List<Map<String, dynamic>> students) async {
+    if (students.isEmpty) {
+      throw Exception('No valid student records found in the file');
     }
 
     // Get valid departments from database
@@ -302,116 +569,109 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
         existingStudentsResponse.map((s) => s['student_reg_no'].toString()));
 
     final errors = <String>[];
-    final students = <Map<String, dynamic>>[];
-    int rowNumber = 1; // Skip header row
+    final validStudents = <Map<String, dynamic>>[];
+    int rowNumber = 1;
 
-    // Parse and validate each row
-    for (final row in rows.skip(1).where((row) => row.trim().isNotEmpty)) {
+    for (final student in students) {
       rowNumber++;
       try {
-        final columns = row.split(',');
-        if (columns.length < 4) {
-          errors.add('Row $rowNumber: Invalid number of columns');
-          continue;
-        }
-
-        final studentId = columns[0].trim().toUpperCase();
-        final deptId = columns[2].trim().toUpperCase();
-        final semesterStr = columns[3].trim();
-
-        // Validate student ID format
-        if (!RegExp(r'^THAWS[A-Z]{2}\d{3}$').hasMatch(studentId)) {
-          errors.add(
-              'Row $rowNumber: Invalid student ID format (should be THAWS[DEPT][NUMBER])');
-          continue;
-        }
+        final studentId = student['student_reg_no'].toString().toUpperCase();
+        final deptId = student['dept_id'].toString().toUpperCase();
+        final semester = student['semester'];
 
         // Check for duplicate in existing students
         if (existingStudentIds.contains(studentId)) {
           errors.add('Row $rowNumber: Student ID $studentId already exists');
+          validStudents.add({...student, 'has_error': true});
           continue;
         }
 
         // Check for duplicate in current import
-        if (students.any((s) => s['student_reg_no'] == studentId)) {
+        if (validStudents.any((s) => s['student_reg_no'] == studentId)) {
           errors.add(
               'Row $rowNumber: Duplicate student ID $studentId in import file');
+          validStudents.add({...student, 'has_error': true});
           continue;
         }
 
         // Validate department
         if (!validDepartments.contains(deptId)) {
           errors.add('Row $rowNumber: Invalid department ID: $deptId');
+          validStudents.add({...student, 'has_error': true});
           continue;
         }
 
         // Validate semester
-        final semester = int.tryParse(semesterStr);
-        if (semester == null || semester < 1 || semester > 8) {
+        if (semester < 1 || semester > 8) {
           errors.add(
               'Row $rowNumber: Invalid semester (should be a number between 1 and 8)');
+          validStudents.add({...student, 'has_error': true});
           continue;
         }
 
-        students.add({
-          'student_reg_no': studentId,
-          'student_name': columns[1].trim(),
-          'dept_id': deptId,
-          'semester': semester,
-        });
+        validStudents.add({...student, 'has_error': false});
       } catch (e) {
         errors.add('Row $rowNumber: ${e.toString()}');
+        validStudents.add({...student, 'has_error': true});
       }
-    }
-
-    // If there are any errors, show them and abort
-    if (errors.isNotEmpty) {
-      throw Exception(
-          'Validation errors found:\n${errors.take(5).join('\n')}${errors.length > 5 ? '\n...and ${errors.length - 5} more errors' : ''}');
     }
 
     // Show preview dialog
     final shouldImport = await showDialog<bool>(
       context: context,
-      builder: (context) => PreviewDialog(students: students),
+      builder: (context) => PreviewDialog(
+        students: validStudents,
+        errors: errors,
+      ),
     );
 
     if (shouldImport == true) {
-      setState(() => isLoading = true);
-      await Supabase.instance.client.from('student').insert(students);
-      developer.log('Successfully imported students to database');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Successfully imported ${students.length} students'),
-          backgroundColor: Colors.green,
-        ),
-      );
-      loadStudents();
+      // Filter out students with errors before importing
+      final studentsToImport =
+          validStudents.where((s) => !s['has_error']).map((s) {
+        final student = Map<String, dynamic>.from(s);
+        student.remove('has_error');
+        return student;
+      }).toList();
+
+      await Supabase.instance.client.from('student').insert(studentsToImport);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Successfully imported ${studentsToImport.length} students'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        loadStudents();
+      }
     }
   }
 
-  Future<void> _importRegistrations(
-      List<String> header, List<String> rows) async {
-    // Validate header format
-    if (header.length != 3 ||
-        header[0] != 'student_reg_no' ||
-        header[1] != 'course_code' ||
-        header[2] != 'is_reguler') {
-      throw Exception(
-          'Invalid CSV format. Expected headers: student_reg_no,course_code,is_reguler');
+  Future<void> _validateAndImportRegistrations(
+      List<Map<String, dynamic>> registrations) async {
+    if (registrations.isEmpty) {
+      throw Exception('No valid registration records found in the file');
     }
 
     // Get valid student IDs
     final studentsResponse =
         await Supabase.instance.client.from('student').select('student_reg_no');
-    final validStudentIds = List<String>.from(
-        studentsResponse.map((s) => s['student_reg_no'].toString()));
+    final validStudentIds = List<String>.from(studentsResponse
+        .map((s) => s['student_reg_no'].toString().toUpperCase()));
 
-    // Get valid course codes
+    // Get valid course codes with case preserved
     final coursesResponse =
         await Supabase.instance.client.from('course').select('course_code');
     final validCourseCodes = List<String>.from(
-        coursesResponse.map((c) => c['course_code'].toString()));
+        coursesResponse.map((c) => c['course_code'].toString().trim()));
+
+    developer.log('Available courses in DB: $validCourseCodes');
+
+    // Create case-sensitive lookup map with trimmed codes
+    final courseCodeMap = {
+      for (var code in validCourseCodes) code.trim(): code.trim()
+    };
 
     // Get existing registrations to check for duplicates
     final existingRegistrationsResponse = await Supabase.instance.client
@@ -421,97 +681,102 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
         List<Map<String, dynamic>>.from(existingRegistrationsResponse);
 
     final errors = <String>[];
-    final registrations = <Map<String, dynamic>>[];
-    int rowNumber = 1; // Skip header row
+    final validRegistrations = <Map<String, dynamic>>[];
+    int rowNumber = 1;
 
-    // Parse and validate each row
-    for (final row in rows.skip(1).where((row) => row.trim().isNotEmpty)) {
+    for (final registration in registrations) {
       rowNumber++;
       try {
-        final columns = row.split(',');
-        if (columns.length < 3) {
-          errors.add('Row $rowNumber: Invalid number of columns');
-          continue;
-        }
+        final studentId =
+            registration['student_reg_no'].toString().toUpperCase();
+        final courseCode = registration['course_code'].toString().trim();
 
-        final studentId = columns[0].trim().toUpperCase();
-        final courseCode = columns[1].trim().toUpperCase();
-        final isRegularStr = columns[2].trim().toLowerCase();
+        developer.log('Validating row $rowNumber - Course: "$courseCode"');
 
         // Validate student ID
         if (!validStudentIds.contains(studentId)) {
           errors.add('Row $rowNumber: Student ID $studentId does not exist');
+          validRegistrations.add({...registration, 'has_error': true});
           continue;
         }
 
-        // Validate course code
-        if (!validCourseCodes.contains(courseCode)) {
-          errors.add('Row $rowNumber: Course code $courseCode does not exist');
+        // Validate course code (exact match after trimming)
+        if (!courseCodeMap.containsKey(courseCode)) {
+          errors
+              .add('Row $rowNumber: Course code "$courseCode" does not exist');
+          developer.log(
+              'Course "$courseCode" not found in valid courses: $validCourseCodes');
+          validRegistrations.add({...registration, 'has_error': true});
           continue;
         }
 
-        // Check for existing registration
+        // Get the correct case for the course code
+        final correctCaseCode = courseCodeMap[courseCode]!;
+
+        // Check for existing registration (case-sensitive comparison after trimming)
         if (existingRegistrations.any((r) =>
-            r['student_reg_no'] == studentId &&
-            r['course_code'] == courseCode)) {
+            r['student_reg_no'].toString().toUpperCase() == studentId &&
+            r['course_code'].toString().trim() == correctCaseCode)) {
           errors.add(
-              'Row $rowNumber: Student $studentId is already registered for course $courseCode');
+              'Row $rowNumber: Student $studentId is already registered for course $correctCaseCode');
+          validRegistrations.add({...registration, 'has_error': true});
           continue;
         }
 
         // Check for duplicate in current import
-        if (registrations.any((r) =>
-            r['student_reg_no'] == studentId &&
-            r['course_code'] == courseCode)) {
+        if (validRegistrations.any((r) =>
+            r['student_reg_no'].toString().toUpperCase() == studentId &&
+            r['course_code'].toString().trim() == correctCaseCode)) {
           errors.add(
-              'Row $rowNumber: Duplicate registration for student $studentId and course $courseCode in import file');
+              'Row $rowNumber: Duplicate registration for student $studentId and course $correctCaseCode in import file');
+          validRegistrations.add({...registration, 'has_error': true});
           continue;
         }
 
-        // Validate is_reguler value
-        if (isRegularStr != 'true' && isRegularStr != 'false') {
-          errors.add(
-              'Row $rowNumber: Invalid is_reguler value (should be true or false)');
-          continue;
-        }
-
-        registrations.add({
+        // Add registration with correct case for course code
+        validRegistrations.add({
           'student_reg_no': studentId,
-          'course_code': courseCode,
-          'is_reguler': isRegularStr == 'true',
+          'course_code': correctCaseCode,
+          'is_reguler': registration['is_reguler'],
+          'has_error': false
         });
       } catch (e) {
         errors.add('Row $rowNumber: ${e.toString()}');
+        validRegistrations.add({...registration, 'has_error': true});
       }
-    }
-
-    // If there are any errors, show them and abort
-    if (errors.isNotEmpty) {
-      throw Exception(
-          'Validation errors found:\n${errors.take(5).join('\n')}${errors.length > 5 ? '\n...and ${errors.length - 5} more errors' : ''}');
     }
 
     // Show preview dialog
     final shouldImport = await showDialog<bool>(
       context: context,
-      builder: (context) =>
-          RegistrationPreviewDialog(registrations: registrations),
+      builder: (context) => PreviewDialog(
+        students: validRegistrations,
+        errors: errors,
+      ),
     );
 
     if (shouldImport == true) {
-      setState(() => isLoading = true);
+      // Filter out registrations with errors before importing
+      final registrationsToImport =
+          validRegistrations.where((r) => !r['has_error']).map((r) {
+        final registration = Map<String, dynamic>.from(r);
+        registration.remove('has_error');
+        return registration;
+      }).toList();
+
       await Supabase.instance.client
           .from('registered_students')
-          .insert(registrations);
-      developer.log('Successfully imported registrations to database');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              'Successfully imported ${registrations.length} course registrations'),
-          backgroundColor: Colors.green,
-        ),
-      );
-      loadStudents();
+          .insert(registrationsToImport);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Successfully imported ${registrationsToImport.length} registrations'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        loadStudents();
+      }
     }
   }
 
@@ -912,7 +1177,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
                                 size: 64, color: Colors.grey[400]),
                             const SizedBox(height: 16),
                             Text(
-                          'No students found',
+                              'No students found',
                               style: TextStyle(
                                 fontSize: 18,
                                 color: Colors.grey[600],
@@ -951,28 +1216,28 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
                               onTap: () => _viewStudentCourses(
                                   student['student_reg_no']),
                               borderRadius: BorderRadius.circular(12),
-                            child: Padding(
+                              child: Padding(
                                 padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              student['student_name'],
-                                              style: const TextStyle(
-                                                fontSize: 16,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                student['student_name'],
+                                                style: const TextStyle(
+                                                  fontSize: 16,
                                                   fontWeight: FontWeight.bold,
-                                              ),
+                                                ),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
-                                            ),
-                                            const SizedBox(height: 4),
+                                              ),
+                                              const SizedBox(height: 4),
                                               Text(
                                                 student['student_reg_no'],
                                                 style: TextStyle(
@@ -1040,16 +1305,16 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
                                     const Spacer(),
                                     Row(
                                       children: [
-                                              Container(
+                                        Container(
                                           padding: const EdgeInsets.symmetric(
-                                                  horizontal: 8,
-                                                  vertical: 4,
-                                                ),
-                                                decoration: BoxDecoration(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
                                             color: Colors.blue.withOpacity(0.1),
-                                                  borderRadius:
-                                                      BorderRadius.circular(12),
-                                                  border: Border.all(
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                            border: Border.all(
                                               color: Colors.blue,
                                             ),
                                           ),
@@ -1057,7 +1322,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage> {
                                             student['dept_id'],
                                             style: const TextStyle(
                                               color: Colors.blue,
-                                                        fontSize: 12,
+                                              fontSize: 12,
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),
@@ -1267,60 +1532,203 @@ class _StudentDialogState extends State<StudentDialog> {
   }
 }
 
-class PreviewDialog extends StatelessWidget {
+class PreviewDialog extends StatefulWidget {
   final List<Map<String, dynamic>> students;
+  final List<String> errors;
 
   const PreviewDialog({
     super.key,
     required this.students,
+    required this.errors,
   });
 
   @override
+  State<PreviewDialog> createState() => _PreviewDialogState();
+}
+
+class _PreviewDialogState extends State<PreviewDialog> {
+  bool _showOnlyErrors = false;
+  String _searchQuery = '';
+
+  List<Map<String, dynamic>> get _filteredStudents {
+    return widget.students.where((student) {
+      if (_showOnlyErrors && !student['has_error']) return false;
+
+      if (_searchQuery.isEmpty) return true;
+
+      return student['student_name']
+              .toString()
+              .toLowerCase()
+              .contains(_searchQuery.toLowerCase()) ||
+          student['student_reg_no']
+              .toString()
+              .toLowerCase()
+              .contains(_searchQuery.toLowerCase()) ||
+          (student['dept_id'] ?? '')
+              .toString()
+              .toLowerCase()
+              .contains(_searchQuery.toLowerCase());
+    }).toList();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Preview Import Data'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Found ${students.length} students to import:'),
-            const SizedBox(height: 8),
-            Flexible(
-              child: Container(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.5,
+    return Dialog(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 800,
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Preview Import Data',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
                 ),
+              ),
+              const SizedBox(height: 16),
+              if (widget.errors.isNotEmpty) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Found ${widget.errors.length} validation errors:',
+                        style: const TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        widget.errors.take(3).join('\n'),
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                      if (widget.errors.length > 3)
+                        Text(
+                          '...and ${widget.errors.length - 3} more errors',
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      decoration: InputDecoration(
+                        hintText: 'Search students...',
+                        prefixIcon: const Icon(Icons.search),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                      ),
+                      onChanged: (value) =>
+                          setState(() => _searchQuery = value),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  FilterChip(
+                    label: const Text('Show Errors Only'),
+                    selected: _showOnlyErrors,
+                    onSelected: (value) =>
+                        setState(() => _showOnlyErrors = value),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Showing ${_filteredStudents.length} of ${widget.students.length} students',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              Expanded(
                 child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: students.length,
+                  itemCount: _filteredStudents.length,
                   itemBuilder: (context, index) {
-                    final student = students[index];
-                    return ListTile(
-                      dense: true,
-                      title: Text(student['student_name']),
-                      subtitle: Text(
-                        '${student['student_reg_no']} - ${student['dept_id']} (Semester ${student['semester']})',
+                    final student = _filteredStudents[index];
+                    final hasError = student['has_error'] == true;
+
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      color: hasError ? Colors.red.shade50 : null,
+                      child: ListTile(
+                        leading: hasError
+                            ? const Icon(Icons.error_outline, color: Colors.red)
+                            : const Icon(Icons.check_circle_outline,
+                                color: Colors.green),
+                        title: Text(
+                          student['student_name'] ?? '',
+                          style: TextStyle(
+                            color: hasError ? Colors.red : null,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${student['student_reg_no']} - ${student['dept_id']} (Semester ${student['semester']})',
+                            ),
+                            if (hasError &&
+                                widget.errors.any((error) => error.contains(
+                                    student['student_reg_no'].toString())))
+                              Text(
+                                widget.errors.firstWhere((error) =>
+                                    error.contains(
+                                        student['student_reg_no'].toString())),
+                                style: TextStyle(
+                                  color: Colors.red.shade700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     );
                   },
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: widget.errors.isEmpty
+                        ? () => Navigator.pop(context, true)
+                        : null,
+                    child: Text(widget.errors.isEmpty
+                        ? 'Import'
+                        : 'Fix Errors to Import'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text('Import'),
-        ),
-      ],
     );
   }
 }
@@ -1834,4 +2242,28 @@ class _AddStudentDialogState extends State<AddStudentDialog> {
       ],
     );
   }
+}
+
+// Helper method to split CSV row while preserving commas within quotes
+List<String> _splitCsvRow(String row) {
+  List<String> fields = [];
+  bool inQuotes = false;
+  StringBuffer currentField = StringBuffer();
+
+  for (int i = 0; i < row.length; i++) {
+    if (row[i] == '"') {
+      inQuotes = !inQuotes;
+    } else if (row[i] == ',' && !inQuotes) {
+      fields.add(currentField.toString());
+      currentField.clear();
+    } else {
+      currentField.write(row[i]);
+    }
+  }
+
+  // Add the last field
+  fields.add(currentField.toString());
+
+  // Clean up any remaining quotes and whitespace
+  return fields.map((field) => field.trim().replaceAll('"', '')).toList();
 }

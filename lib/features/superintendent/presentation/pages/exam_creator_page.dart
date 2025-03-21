@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:office_pal/features/controller/domain/models/course.dart';
 import 'package:office_pal/features/controller/domain/models/exam.dart';
 import 'package:office_pal/features/controller/data/repositories/exam_repository.dart';
 import 'package:office_pal/features/controller/presentation/providers/course_provider.dart';
-import 'package:office_pal/features/controller/presentation/providers/exam_provider.dart';
 
 final examRepositoryProvider =
     Provider<ExamRepository>((ref) => ExamRepository());

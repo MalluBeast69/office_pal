@@ -2647,8 +2647,8 @@ class _SeatingManagementPageState extends ConsumerState<SeatingManagementPage> {
         fontSize: 14,
         fontWeight: pw.FontWeight.bold,
       );
-      final normalStyle = const pw.TextStyle(fontSize: 10);
-      final smallStyle = const pw.TextStyle(fontSize: 8);
+      const normalStyle = pw.TextStyle(fontSize: 10);
+      const smallStyle = pw.TextStyle(fontSize: 8);
 
       // Get arrangements for selected date and session
       final dateStr = _selectedDate!.toString().split(' ')[0];

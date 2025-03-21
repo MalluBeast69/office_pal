@@ -363,7 +363,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                                         .primary
                                                     : Theme.of(context)
                                                         .colorScheme
-                                                        .surfaceVariant,
+                                                        .surfaceContainerHighest,
                                             borderRadius:
                                                 BorderRadius.circular(16),
                                             boxShadow: [
@@ -434,7 +434,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                                         .primary
                                                     : Theme.of(context)
                                                         .colorScheme
-                                                        .surfaceVariant,
+                                                        .surfaceContainerHighest,
                                             borderRadius:
                                                 BorderRadius.circular(16),
                                             boxShadow: [
@@ -672,7 +672,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                         borderRadius: BorderRadius.circular(16),
                         color: Theme.of(context)
                             .colorScheme
-                            .surfaceVariant
+                            .surfaceContainerHighest
                             .withOpacity(0.5),
                       ),
                       child: Material(

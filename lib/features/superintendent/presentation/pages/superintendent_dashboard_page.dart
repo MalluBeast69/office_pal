@@ -8,7 +8,6 @@ import 'course_management_page.dart';
 import 'department_management_page.dart';
 import 'hall_management_page.dart';
 import 'exam_management_page.dart';
-import 'seating_arrangement/select_exam_page.dart';
 import 'seating_management_page.dart';
 import 'dart:convert';
 import 'dart:developer' as developer;
@@ -306,20 +305,14 @@ class _SuperintendentDashboardPageState
   Future<void> _signOut(BuildContext context) async {
     try {
       setState(() => isLoading = true);
-      // Clear any stored session/auth data
+
+      // Sign out from Supabase
       await Supabase.instance.client.auth.signOut();
-      await Supabase.instance.client.auth.refreshSession();
 
       if (context.mounted) {
         // Force navigation to login and clear all routes
-        await Navigator.of(context)
+        Navigator.of(context)
             .pushNamedAndRemoveUntil('/login', (route) => false);
-        // Additional cleanup
-        setState(() {
-          _currentSection = 'dashboard';
-          notifications.clear();
-          stats.clear();
-        });
       }
     } catch (e) {
       if (context.mounted) {

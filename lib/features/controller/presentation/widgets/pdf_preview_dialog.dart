@@ -31,10 +31,8 @@ class PDFPreviewDialog extends StatelessWidget {
           allowedExtensions: ['pdf'],
         );
 
-        if (outputFile != null) {
-          final file = File(outputFile);
-          await file.writeAsBytes(pdfBytes);
-        }
+        final file = File(outputFile!);
+        await file.writeAsBytes(pdfBytes);
       } catch (e) {
         debugPrint('Error saving PDF: $e');
       }

@@ -126,28 +126,6 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
       _clearForm();
     }
 
-    // Function to generate course code
-    void generateCourseCode(String deptId) async {
-      if (!isEditing) {
-        try {
-          // Get the count of existing courses for this department
-          final response = await Supabase.instance.client
-              .from('course')
-              .select('course_code')
-              .eq('dept_id', deptId);
-
-          final existingCourses = List<Map<String, dynamic>>.from(response);
-          final courseCount = existingCourses.length + 1;
-
-          // Generate code: DEPT + Number (e.g., CSE101)
-          final newCode = '$deptId${courseCount.toString().padLeft(3, '0')}';
-          _courseCodeController.text = newCode;
-        } catch (error) {
-          developer.log('Error generating course code: $error');
-        }
-      }
-    }
-
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -167,20 +145,22 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
                     border: OutlineInputBorder(),
                   ),
                   items: [
-                    const DropdownMenuItem(
-                      value: null,
-                      child: Text('All Departments'),
-                    ),
                     ...departments.map((dept) => DropdownMenuItem(
                           value: dept,
                           child: Text(dept),
                         )),
                   ],
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please select a department';
+                    }
+                    return null;
+                  },
                   onChanged: (value) {
                     if (value != null) {
                       setState(() {
                         selectedDepartment = value;
-                        generateCourseCode(value);
+                        _deptIdController.text = value;
                       });
                     }
                   },
@@ -192,11 +172,11 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
                   labelText: 'Course Code',
                   border: OutlineInputBorder(),
                 ),
-                enabled: false,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter course code';
                   }
+                  // Add validation for course code format if needed
                   return null;
                 },
               ),
@@ -315,13 +295,34 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
   Future<void> _addCourse() async {
     if (!_formKey.currentState!.validate()) return;
     if (selectedCourseType == null) return;
+    if (selectedDepartment == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a department'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
     setState(() => isLoading = true);
     try {
+      // First verify if department exists
+      final deptResponse = await Supabase.instance.client
+          .from('department')
+          .select()
+          .eq('dept_id', selectedDepartment)
+          .single();
+
+      if (deptResponse == null) {
+        throw Exception('Selected department does not exist');
+      }
+
+      // Then add the course
       await Supabase.instance.client.from('course').insert({
         'course_code': _courseCodeController.text,
         'course_name': _courseNameController.text,
-        'dept_id': _deptIdController.text,
+        'dept_id': selectedDepartment,
         'credit': int.parse(_creditController.text),
         'course_type': selectedCourseType,
         'semester': int.parse(_semesterController.text),
@@ -342,10 +343,13 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error adding course: $error'),
+            content: Text('Error adding course: ${error.toString()}'),
             backgroundColor: Colors.red,
           ),
         );
+      }
+    } finally {
+      if (mounted) {
         setState(() => isLoading = false);
       }
     }

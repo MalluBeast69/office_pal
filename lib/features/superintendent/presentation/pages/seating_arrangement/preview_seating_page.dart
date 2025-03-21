@@ -1759,7 +1759,7 @@ class _PreviewSeatingPageState extends ConsumerState<PreviewSeatingPage> {
                         return pw.Container(
                           height: cellHeight,
                           width: cellWidth,
-                          padding: pw.EdgeInsets.all(cellPadding),
+                          padding: const pw.EdgeInsets.all(cellPadding),
                           decoration: pw.BoxDecoration(
                             border: pw.Border.all(width: 0.5),
                           ),

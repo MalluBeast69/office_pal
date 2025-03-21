@@ -5,6 +5,7 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
 import 'features/auth/presentation/pages/login_page.dart';
 import 'features/superintendent/presentation/pages/superintendent_dashboard_page.dart';
 import 'features/controller/presentation/pages/controller_dashboard_page.dart';
+import 'features/superintendent/presentation/pages/seating_management_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -58,44 +59,79 @@ class _MyAppState extends ConsumerState<MyApp> {
         '/login': (context) => const LoginPage(),
         '/superintendent': (context) => const SuperintendentDashboardPage(),
         '/controller': (context) => const ControllerDashboardPage(),
+        '/seating_management': (context) => const SeatingManagementPage(),
       },
     );
   }
 }
 
-class AuthWrapper extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
 
   @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  late Future<Session?> _sessionFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _sessionFuture = Future.value(Supabase.instance.client.auth.currentSession);
+  }
+
+  Widget _handleAuthState(Session? session) {
+    print('Handling auth state for session: ${session?.user.email}');
+
+    if (session == null) {
+      return const LoginPage();
+    }
+
+    final userEmail = session.user.email?.toLowerCase() ?? '';
+    print('User email: $userEmail');
+
+    if (userEmail.isEmpty) {
+      return const LoginPage();
+    }
+
+    if (userEmail.contains('superintendent')) {
+      return const SuperintendentDashboardPage();
+    } else if (userEmail.contains('controller')) {
+      print('Navigating to Controller Dashboard');
+      return const ControllerDashboardPage();
+    }
+
+    return const LoginPage();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return StreamBuilder<AuthState>(
-      stream: Supabase.instance.client.auth.onAuthStateChange,
+    return FutureBuilder<Session?>(
+      future: _sessionFuture,
       builder: (context, snapshot) {
-        // Debug print to track auth state
-        print('Auth state changed: ${snapshot.data?.session?.user.email}');
+        print('Future connection state: ${snapshot.connectionState}');
+        print('Future session email: ${snapshot.data?.user.email}');
+        print('Future has error: ${snapshot.hasError}');
 
-        if (!snapshot.hasData || snapshot.data?.session == null) {
-          return const LoginPage();
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const LoadingScreen();
         }
 
-        final userEmail =
-            snapshot.data?.session?.user.email?.toLowerCase() ?? '';
-        print('User email: $userEmail');
+        // Once we have the initial state, start listening to auth changes
+        return StreamBuilder<AuthState>(
+          stream: Supabase.instance.client.auth.onAuthStateChange,
+          builder: (context, streamSnapshot) {
+            print('Stream connection state: ${streamSnapshot.connectionState}');
+            print(
+                'Stream auth email: ${streamSnapshot.data?.session?.user.email}');
+            print('Stream has error: ${streamSnapshot.hasError}');
 
-        // More specific email checks
-        if (userEmail.isEmpty) {
-          return const LoginPage();
-        }
-
-        if (userEmail.contains('superintendent')) {
-          return const SuperintendentDashboardPage();
-        } else if (userEmail.toLowerCase().contains('controller')) {
-          print('Navigating to Controller Dashboard');
-          return const ControllerDashboardPage();
-        }
-
-        print('No role match found, returning to login');
-        return const LoginPage();
+            // For sign out, we want to use the stream data only
+            final session = streamSnapshot.data?.session;
+            return _handleAuthState(session);
+          },
+        );
       },
     );
   }

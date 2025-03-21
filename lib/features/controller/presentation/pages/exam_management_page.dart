@@ -6,10 +6,8 @@ import 'package:intl/intl.dart';
 import 'package:office_pal/features/controller/presentation/providers/exam_provider.dart';
 import 'package:office_pal/features/controller/presentation/providers/course_provider.dart';
 import 'package:office_pal/features/controller/domain/models/exam.dart';
-import 'package:office_pal/features/controller/domain/models/course.dart';
 import 'package:office_pal/features/controller/presentation/widgets/excel_preview_dialog.dart'
     as preview;
-import 'package:office_pal/features/controller/utils/exam_timetable_excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:excel/excel.dart' as excel;
 import 'package:office_pal/features/superintendent/presentation/pages/exam_creator_page.dart'

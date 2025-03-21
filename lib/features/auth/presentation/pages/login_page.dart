@@ -24,76 +24,170 @@ class _LoginPageState extends ConsumerState<LoginPage>
   LoginMode _loginMode = LoginMode.student;
   final _idController = TextEditingController();
   final _passwordController = TextEditingController();
-  late AnimationController _animationController;
-  late AnimationController _gradientController;
-  late Animation<double> _rotationAnimation;
-  late Animation<double> _scaleAnimation;
-  late Animation<double> _slideAnimation;
-  late Animation<double> _gradientAnimation;
-  bool _isHoveringStudent = false;
-  bool _isHoveringFaculty = false;
+
+  // Animation controllers
+  late AnimationController _fadeInController;
+  late AnimationController _slideController;
+  late AnimationController _featureCarouselController;
+
+  // Animations
+  late Animation<double> _fadeInAnimation;
+  late Animation<Offset> _slideAnimation;
+  late Animation<double> _featureOpacityAnimation;
+
+  // Current feature index
+  int _currentFeatureIndex = 0;
+
+  // List of features to display in carousel
+  final List<FeatureItem> _features = [
+    FeatureItem(
+      icon: Icons.assignment_outlined,
+      title: 'Exam Management',
+      description: 'Schedule and organize examination sessions',
+    ),
+    FeatureItem(
+      icon: Icons.event_seat_outlined,
+      title: 'Seating Arrangements',
+      description: 'Automated hall planning and seat allocation',
+    ),
+    FeatureItem(
+      icon: Icons.people_outline,
+      title: 'Faculty Management',
+      description: 'Assign invigilators and manage faculty duties',
+    ),
+    FeatureItem(
+      icon: Icons.school_outlined,
+      title: 'Student Portal',
+      description: 'Access exam schedules and results easily',
+    ),
+    FeatureItem(
+      icon: Icons.admin_panel_settings_outlined,
+      title: 'Administration Tools',
+      description: 'Specialized access for controllers and superintendents',
+    ),
+    FeatureItem(
+      icon: Icons.lock_outlined,
+      title: 'Role-Based Access',
+      description: 'Secure permissions for students, faculty, and admins',
+    ),
+    FeatureItem(
+      icon: Icons.dashboard_outlined,
+      title: 'Intuitive Dashboards',
+      description: 'Custom interfaces for different user roles',
+    ),
+    FeatureItem(
+      icon: Icons.notifications_outlined,
+      title: 'Examination Alerts',
+      description: 'Important notifications for all stakeholders',
+    ),
+    FeatureItem(
+      icon: Icons.room_outlined,
+      title: 'Venue Management',
+      description: 'Organize and allocate examination venues',
+    ),
+    FeatureItem(
+      icon: Icons.schedule_outlined,
+      title: 'Timetable Generation',
+      description: 'Create conflict-free examination schedules',
+    ),
+    FeatureItem(
+      icon: Icons.security_outlined,
+      title: 'Secure Authentication',
+      description: 'Protected access to examination resources',
+    ),
+    FeatureItem(
+      icon: Icons.support_agent_outlined,
+      title: 'Technical Support',
+      description: 'Assistance for all system users',
+    ),
+  ];
+
+  // Focus states
   bool _isIdFieldFocused = false;
   bool _isPasswordFieldFocused = false;
+  bool _isHoveringStudent = false;
+  bool _isHoveringFaculty = false;
+  bool _isHoveringAdminButton = false;
 
   @override
   void initState() {
     super.initState();
-    // Main animation controller for one-time animations
-    _animationController = AnimationController(
+
+    // Subtle fade-in animation
+    _fadeInController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 800),
     );
 
-    // Separate controller for looping gradient
-    _gradientController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 15000),
-    )..repeat();
+    _fadeInAnimation = CurvedAnimation(
+      parent: _fadeInController,
+      curve: Curves.easeIn,
+    );
 
-    _rotationAnimation = Tween<double>(
-      begin: 0,
-      end: 2 * math.pi,
+    // Subtle slide animation for content
+    _slideController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.1),
+      end: Offset.zero,
     ).animate(
       CurvedAnimation(
-        parent: _animationController,
-        curve: const Interval(0.0, 0.7, curve: Curves.easeInOut),
+        parent: _slideController,
+        curve: Curves.easeOutCubic,
       ),
     );
 
-    _scaleAnimation = Tween<double>(
+    // Feature carousel animation
+    _featureCarouselController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+
+    _featureOpacityAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
     ).animate(
       CurvedAnimation(
-        parent: _animationController,
-        curve: const Interval(0.3, 1.0, curve: Curves.elasticOut),
+        parent: _featureCarouselController,
+        curve: Curves.easeInOut,
       ),
     );
 
-    _slideAnimation = Tween<double>(
-      begin: -100.0,
-      end: 0.0,
-    ).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: const Interval(0.3, 0.8, curve: Curves.easeOutCubic),
-      ),
-    );
+    // Start animations
+    _fadeInController.forward();
+    _slideController.forward();
+    _featureCarouselController.forward();
 
-    _gradientAnimation = Tween<double>(
-      begin: 0.0,
-      end: 2 * math.pi,
-    ).animate(_gradientController);
+    // Set up the feature carousel rotation
+    _setupFeatureCarousel();
+  }
 
-    _animationController.forward();
+  void _setupFeatureCarousel() {
+    // Every 4 seconds, change the feature
+    Future.delayed(const Duration(seconds: 4), () {
+      if (mounted) {
+        _featureCarouselController.reverse().then((_) {
+          setState(() {
+            _currentFeatureIndex =
+                (_currentFeatureIndex + 1) % _features.length;
+          });
+          _featureCarouselController.forward();
+          _setupFeatureCarousel();
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
     _idController.dispose();
     _passwordController.dispose();
-    _animationController.dispose();
-    _gradientController.dispose();
+    _fadeInController.dispose();
+    _slideController.dispose();
+    _featureCarouselController.dispose();
     super.dispose();
   }
 
@@ -119,6 +213,10 @@ class _LoginPageState extends ConsumerState<LoginPage>
                   : 'Faculty ID and password must be the same',
             ),
             backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         );
       }
@@ -147,6 +245,10 @@ class _LoginPageState extends ConsumerState<LoginPage>
           SnackBar(
             content: Text('Welcome ${data[nameField]}!'),
             backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         );
 
@@ -207,15 +309,23 @@ class _LoginPageState extends ConsumerState<LoginPage>
           SnackBar(
             content: Text(errorMessage),
             backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         );
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('An unexpected error occurred'),
+          SnackBar(
+            content: const Text('An unexpected error occurred'),
             backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         );
       }
@@ -226,505 +336,380 @@ class _LoginPageState extends ConsumerState<LoginPage>
     }
   }
 
+  void _navigateToAdminLogin() {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const AdminLoginPage(),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: child,
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Determine if this is a desktop layout
+    final isDesktop = MediaQuery.of(context).size.width > 800;
+
     return Scaffold(
-      body: Stack(
-        children: [
-          // Animated gradient background
-          AnimatedBuilder(
-            animation: _gradientAnimation,
-            builder: (context, child) {
-              return CustomPaint(
-                painter: AnimatedGradientPainter(
-                  animation: _gradientAnimation.value,
-                  colorOne:
-                      Theme.of(context).colorScheme.primary.withOpacity(0.3),
-                  colorTwo:
-                      Theme.of(context).colorScheme.tertiary.withOpacity(0.3),
+      body: FadeTransition(
+        opacity: _fadeInAnimation,
+        child: Stack(
+          children: [
+            // Background with new gradient colors
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    const Color(0xFF0052CC), // Deep blue
+                    const Color(0xFF00357A), // Darker blue
+                  ],
                 ),
-                size: MediaQuery.of(context).size,
-              );
-            },
-          ),
-          // Main content
-          Center(
+              ),
+            ),
+            // Enhanced pattern overlay
+            CustomPaint(
+              painter: SubtlePatternPainter(
+                color: Colors.white.withOpacity(0.05),
+              ),
+              size: MediaQuery.of(context).size,
+            ),
+            // Main content
+            if (isDesktop) _buildDesktopLayout() else _buildMobileLayout(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopLayout() {
+    return Row(
+      children: [
+        // Left side - Brand section with feature carousel
+        Expanded(
+          flex: 5,
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 40.0, vertical: 48.0),
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // 3D rotating logo
-                  AnimatedBuilder(
-                    animation: _rotationAnimation,
-                    builder: (context, child) {
-                      return Transform(
-                        alignment: Alignment.center,
-                        transform: Matrix4.identity()
-                          ..setEntry(3, 2, 0.001)
-                          ..rotateY(_rotationAnimation.value),
-                        child: Transform.scale(
-                          scale: _scaleAnimation.value,
-                          child: Container(
-                            width: 120,
-                            height: 120,
-                            decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .primary
-                                  .withOpacity(0.9),
-                              borderRadius: BorderRadius.circular(30),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withOpacity(0.3),
-                                  blurRadius: 20,
-                                  offset: const Offset(0, 10),
-                                ),
-                              ],
-                            ),
-                            child: const Icon(
-                              Icons.school,
-                              size: 60,
-                              color: Colors.white,
-                            ),
+              child: SlideTransition(
+                position: _slideAnimation,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Logo and badge
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.15),
+                                blurRadius: 15,
+                                offset: const Offset(0, 5),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            Icons.school,
+                            size: 40,
+                            color: const Color(0xFF0052CC),
                           ),
                         ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 40),
-                  // Welcome text with slide animation
-                  AnimatedBuilder(
-                    animation: _slideAnimation,
-                    builder: (context, child) {
-                      return Transform.translate(
-                        offset: Offset(_slideAnimation.value, 0),
-                        child: child,
-                      );
-                    },
-                    child: Text(
-                      'Welcome Back!',
-                      style:
-                          Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                  // Login card
-                  AnimatedBuilder(
-                    animation: _scaleAnimation,
-                    builder: (context, child) {
-                      return Transform.scale(
-                        scale: _scaleAnimation.value,
-                        child: child,
-                      );
-                    },
-                    child: Card(
-                      elevation: 8,
-                      shadowColor:
-                          Theme.of(context).colorScheme.shadow.withOpacity(0.2),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(24.0),
-                        child: Form(
-                          key: _formKey,
-                          child: Column(
+                        const SizedBox(width: 16),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.2),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              // Enhanced login mode toggle
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: MouseRegion(
-                                      onEnter: (_) => setState(
-                                          () => _isHoveringStudent = true),
-                                      onExit: (_) => setState(
-                                          () => _isHoveringStudent = false),
-                                      child: GestureDetector(
-                                        onTap: () => setState(() =>
-                                            _loginMode = LoginMode.student),
-                                        child: AnimatedContainer(
-                                          duration:
-                                              const Duration(milliseconds: 200),
-                                          padding: const EdgeInsets.symmetric(
-                                              vertical: 16),
-                                          decoration: BoxDecoration(
-                                            color:
-                                                _loginMode == LoginMode.student
-                                                    ? Theme.of(context)
-                                                        .colorScheme
-                                                        .primary
-                                                    : Theme.of(context)
-                                                        .colorScheme
-                                                        .surfaceContainerHighest,
-                                            borderRadius:
-                                                BorderRadius.circular(16),
-                                            boxShadow: [
-                                              if (_loginMode ==
-                                                      LoginMode.student ||
-                                                  _isHoveringStudent)
-                                                BoxShadow(
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .primary
-                                                      .withOpacity(0.3),
-                                                  blurRadius: 8,
-                                                  spreadRadius: 2,
-                                                ),
-                                            ],
-                                          ),
-                                          child: Column(
-                                            children: [
-                                              Icon(
-                                                Icons.school,
-                                                color: _loginMode ==
-                                                        LoginMode.student
-                                                    ? Colors.white
-                                                    : Theme.of(context)
-                                                        .colorScheme
-                                                        .onSurfaceVariant,
-                                                size: 28,
-                                              ),
-                                              const SizedBox(height: 8),
-                                              Text(
-                                                'Student',
-                                                style: TextStyle(
-                                                  color: _loginMode ==
-                                                          LoginMode.student
-                                                      ? Colors.white
-                                                      : Theme.of(context)
-                                                          .colorScheme
-                                                          .onSurfaceVariant,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: MouseRegion(
-                                      onEnter: (_) => setState(
-                                          () => _isHoveringFaculty = true),
-                                      onExit: (_) => setState(
-                                          () => _isHoveringFaculty = false),
-                                      child: GestureDetector(
-                                        onTap: () => setState(() =>
-                                            _loginMode = LoginMode.faculty),
-                                        child: AnimatedContainer(
-                                          duration:
-                                              const Duration(milliseconds: 200),
-                                          padding: const EdgeInsets.symmetric(
-                                              vertical: 16),
-                                          decoration: BoxDecoration(
-                                            color:
-                                                _loginMode == LoginMode.faculty
-                                                    ? Theme.of(context)
-                                                        .colorScheme
-                                                        .primary
-                                                    : Theme.of(context)
-                                                        .colorScheme
-                                                        .surfaceContainerHighest,
-                                            borderRadius:
-                                                BorderRadius.circular(16),
-                                            boxShadow: [
-                                              if (_loginMode ==
-                                                      LoginMode.faculty ||
-                                                  _isHoveringFaculty)
-                                                BoxShadow(
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .primary
-                                                      .withOpacity(0.3),
-                                                  blurRadius: 8,
-                                                  spreadRadius: 2,
-                                                ),
-                                            ],
-                                          ),
-                                          child: Column(
-                                            children: [
-                                              Icon(
-                                                Icons.person_2,
-                                                color: _loginMode ==
-                                                        LoginMode.faculty
-                                                    ? Colors.white
-                                                    : Theme.of(context)
-                                                        .colorScheme
-                                                        .onSurfaceVariant,
-                                                size: 28,
-                                              ),
-                                              const SizedBox(height: 8),
-                                              Text(
-                                                'Faculty',
-                                                style: TextStyle(
-                                                  color: _loginMode ==
-                                                          LoginMode.faculty
-                                                      ? Colors.white
-                                                      : Theme.of(context)
-                                                          .colorScheme
-                                                          .onSurfaceVariant,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                              Icon(
+                                Icons.verified_user,
+                                size: 16,
+                                color: Colors.greenAccent.shade400,
                               ),
-                              const SizedBox(height: 24),
-                              // Enhanced ID field with glow
-                              Focus(
-                                onFocusChange: (hasFocus) => setState(
-                                    () => _isIdFieldFocused = hasFocus),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(12),
-                                    boxShadow: [
-                                      if (_isIdFieldFocused)
-                                        BoxShadow(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .primary
-                                              .withOpacity(0.2),
-                                          blurRadius: 8,
-                                          spreadRadius: 2,
-                                        ),
-                                    ],
-                                  ),
-                                  child: TextFormField(
-                                    controller: _idController,
-                                    decoration: InputDecoration(
-                                      labelText: _getIdLabel,
-                                      prefixIcon:
-                                          const Icon(Icons.person_outline),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      filled: true,
-                                      fillColor: Theme.of(context)
-                                          .colorScheme
-                                          .surface
-                                          .withOpacity(0.8),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .outline
-                                              .withOpacity(0.5),
-                                        ),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .primary,
-                                          width: 2,
-                                        ),
-                                      ),
-                                    ),
-                                    validator: (value) {
-                                      if (value == null || value.isEmpty) {
-                                        return 'Please enter your ${_getIdLabel.toLowerCase()}';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              // Enhanced password field with glow
-                              Focus(
-                                onFocusChange: (hasFocus) => setState(
-                                    () => _isPasswordFieldFocused = hasFocus),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(12),
-                                    boxShadow: [
-                                      if (_isPasswordFieldFocused)
-                                        BoxShadow(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .primary
-                                              .withOpacity(0.2),
-                                          blurRadius: 8,
-                                          spreadRadius: 2,
-                                        ),
-                                    ],
-                                  ),
-                                  child: TextFormField(
-                                    controller: _passwordController,
-                                    obscureText: _isObscured,
-                                    decoration: InputDecoration(
-                                      labelText: 'Password',
-                                      prefixIcon:
-                                          const Icon(Icons.lock_outline),
-                                      suffixIcon: IconButton(
-                                        icon: Icon(
-                                          _isObscured
-                                              ? Icons.visibility
-                                              : Icons.visibility_off,
-                                        ),
-                                        onPressed: () {
-                                          setState(
-                                              () => _isObscured = !_isObscured);
-                                        },
-                                      ),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      filled: true,
-                                      fillColor: Theme.of(context)
-                                          .colorScheme
-                                          .surface
-                                          .withOpacity(0.8),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .outline
-                                              .withOpacity(0.5),
-                                        ),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .primary,
-                                          width: 2,
-                                        ),
-                                      ),
-                                    ),
-                                    validator: (value) {
-                                      if (value == null || value.isEmpty) {
-                                        return 'Please enter your password';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 24),
-                              // Sign in button
-                              SizedBox(
-                                width: double.infinity,
-                                height: 50,
-                                child: ElevatedButton(
-                                  onPressed: _isLoading ? null : _signIn,
-                                  style: ElevatedButton.styleFrom(
-                                    elevation: 4,
-                                    shadowColor: Theme.of(context)
-                                        .colorScheme
-                                        .primary
-                                        .withOpacity(0.4),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  child: _isLoading
-                                      ? LoadingAnimationWidget
-                                          .staggeredDotsWave(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .primary,
-                                          size: 24,
-                                        )
-                                      : const Text(
-                                          'Sign In',
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
+                              const SizedBox(width: 6),
+                              const Text(
+                                'EDUCATION PORTAL',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                  letterSpacing: 1,
                                 ),
                               ),
                             ],
                           ),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 30), // Reduced spacing
+                    // Main title and subtitle
+                    const Text(
+                      'Office Pal',
+                      style: TextStyle(
+                        fontSize: 42,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        height: 1.2,
                       ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12), // Reduced spacing
+                    Text(
+                      'Examination Management System',
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: Colors.white.withOpacity(0.8),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 40), // Reduced spacing
+
+                    // Feature carousel
+                    Center(child: _buildFeatureCarousel()),
+
+                    // Feature dots indicator
+                    const SizedBox(height: 16), // Reduced spacing
+                    _buildFeatureDotIndicator(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Right side - Login form
+        Expanded(
+          flex: 5,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(30),
+                bottomLeft: Radius.circular(30),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 20,
+                  offset: const Offset(-5, 0),
+                ),
+              ],
+            ),
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(48.0),
+                child: _buildLoginForm(),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFeatureCarousel() {
+    final currentFeature = _features[_currentFeatureIndex];
+
+    return AnimatedBuilder(
+      animation: _featureOpacityAnimation,
+      builder: (context, child) {
+        return Opacity(
+          opacity: _featureOpacityAnimation.value,
+          child: Container(
+            width: 400,
+            padding: const EdgeInsets.all(0),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.15),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 15,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Stack(
+                children: [
+                  // Background pattern
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: FeatureCardBackgroundPainter(),
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  // Admin login button with hover effect
-                  MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest
-                            .withOpacity(0.5),
-                      ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(16),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              PageRouteBuilder(
-                                pageBuilder:
-                                    (context, animation, secondaryAnimation) =>
-                                        const AdminLoginPage(),
-                                transitionsBuilder: (context, animation,
-                                    secondaryAnimation, child) {
-                                  return FadeTransition(
-                                    opacity: animation,
-                                    child: SlideTransition(
-                                      position: Tween<Offset>(
-                                        begin: const Offset(0, 0.5),
-                                        end: Offset.zero,
-                                      ).animate(animation),
-                                      child: child,
+                  // Main content
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 25, horizontal: 30),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Remove feature number counter and add more top padding instead
+                        const SizedBox(height: 10),
+
+                        // Animated icon with pulse effect
+                        TweenAnimationBuilder<double>(
+                          tween: Tween<double>(begin: 0.95, end: 1.05),
+                          duration: const Duration(milliseconds: 2000),
+                          curve: Curves.easeInOut,
+                          builder: (context, value, child) {
+                            return Transform.scale(
+                              scale: value,
+                              child: Container(
+                                width: 70,
+                                height: 70,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF0052CC)
+                                          .withOpacity(0.3),
+                                      blurRadius: value * 15,
+                                      spreadRadius: value * 3,
                                     ),
-                                  );
-                                },
+                                  ],
+                                ),
+                                child: Center(
+                                  child: Icon(
+                                    currentFeature.icon,
+                                    color: Colors.white,
+                                    size: 35,
+                                  ),
+                                ),
                               ),
                             );
                           },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 12,
+                        ),
+
+                        const SizedBox(height: 30),
+
+                        // Title with bottom border
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Text(
+                              currentFeature.title.toUpperCase(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 20,
+                                letterSpacing: 1.5,
+                              ),
+                              textAlign: TextAlign.center,
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.admin_panel_settings,
-                                  color: Theme.of(context).colorScheme.primary,
+                            const SizedBox(height: 12),
+                            Container(
+                              width: 50,
+                              height: 3,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    Colors.white.withOpacity(0.1),
+                                    Colors.white,
+                                    Colors.white.withOpacity(0.1),
+                                  ],
                                 ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Login as Controller or Superintendent',
-                                  style: TextStyle(
-                                    color:
-                                        Theme.of(context).colorScheme.primary,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // Description - ensure center alignment
+                        Text(
+                          currentFeature.description,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.9),
+                            fontSize: 16,
+                            height: 1.5,
+                            letterSpacing: 0.3,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // Learn more button
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.2),
+                              width: 1,
                             ),
                           ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.arrow_forward,
+                                color: Colors.white,
+                                size: 14,
+                              ),
+                              const SizedBox(width: 6),
+                              const Text(
+                                'LEARN MORE',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Bottom accent line
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      height: 4,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Color(0xFF00C6FF),
+                            Color(0xFF0072FF),
+                          ],
                         ),
                       ),
                     ),
@@ -733,40 +718,658 @@ class _LoginPageState extends ConsumerState<LoginPage>
               ),
             ),
           ),
-        ],
+        );
+      },
+    );
+  }
+
+  Widget _buildFeatureDotIndicator() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(
+        _features.length,
+        (index) {
+          final isActive = index == _currentFeatureIndex;
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                _currentFeatureIndex = index;
+                _featureCarouselController.reset();
+                _featureCarouselController.forward();
+              });
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              width: isActive ? 24 : 8,
+              height: 8,
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              decoration: BoxDecoration(
+                color: isActive ? Colors.white : Colors.white.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 
-  void _clearForm() {
-    _idController.clear();
-    _passwordController.clear();
+  Widget _buildMobileLayout() {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24.0),
+        child: SlideTransition(
+          position: _slideAnimation,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Logo and badge
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 15,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.school,
+                  size: 40,
+                  color: Color(0xFF0052CC),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Office Pal',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Examination Management System',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.white.withOpacity(0.8),
+                ),
+              ),
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 24),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.2),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.verified_user,
+                      size: 16,
+                      color: Colors.greenAccent.shade400,
+                    ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'EDUCATION PORTAL',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Feature showcase
+              AnimatedBuilder(
+                animation: _featureOpacityAnimation,
+                builder: (context, child) {
+                  final currentFeature = _features[_currentFeatureIndex];
+                  return Opacity(
+                    opacity: _featureOpacityAnimation.value,
+                    child: Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 20),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.15),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              currentFeature.icon,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  currentFeature.title,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  currentFeature.description,
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.9),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+              // Feature dots indicator (smaller for mobile)
+              SizedBox(
+                height: 8,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(
+                    _features.length,
+                    (index) => Container(
+                      width: 6,
+                      height: 6,
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: index == _currentFeatureIndex
+                            ? Colors.white
+                            : Colors.white.withOpacity(0.3),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 30),
+              // Login form
+              Container(
+                margin: const EdgeInsets.only(top: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 10,
+                      spreadRadius: 0,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: _buildLoginForm(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoginForm() {
+    return Form(
+      key: _formKey,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Sign In',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: const Color(0xFF0052CC),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Please login to continue',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          // Login mode toggle with improved styling
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.grey.shade200,
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: MouseRegion(
+                    onEnter: (_) => setState(() => _isHoveringStudent = true),
+                    onExit: (_) => setState(() => _isHoveringStudent = false),
+                    child: GestureDetector(
+                      onTap: () =>
+                          setState(() => _loginMode = LoginMode.student),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: _loginMode == LoginMode.student
+                              ? const Color(0xFF0052CC)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.school,
+                              color: _loginMode == LoginMode.student
+                                  ? Colors.white
+                                  : Colors.grey.shade500,
+                              size: 24,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Student',
+                              style: TextStyle(
+                                color: _loginMode == LoginMode.student
+                                    ? Colors.white
+                                    : Colors.grey.shade700,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: MouseRegion(
+                    onEnter: (_) => setState(() => _isHoveringFaculty = true),
+                    onExit: (_) => setState(() => _isHoveringFaculty = false),
+                    child: GestureDetector(
+                      onTap: () =>
+                          setState(() => _loginMode = LoginMode.faculty),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: _loginMode == LoginMode.faculty
+                              ? const Color(0xFF0052CC)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.person,
+                              color: _loginMode == LoginMode.faculty
+                                  ? Colors.white
+                                  : Colors.grey.shade500,
+                              size: 24,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Faculty',
+                              style: TextStyle(
+                                color: _loginMode == LoginMode.faculty
+                                    ? Colors.white
+                                    : Colors.grey.shade700,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 30),
+
+          // ID field with enhanced styling
+          Focus(
+            onFocusChange: (hasFocus) =>
+                setState(() => _isIdFieldFocused = hasFocus),
+            child: TextFormField(
+              controller: _idController,
+              decoration: InputDecoration(
+                labelText: _getIdLabel,
+                prefixIcon: Icon(
+                  Icons.person_outline,
+                  color: _isIdFieldFocused
+                      ? const Color(0xFF0052CC)
+                      : Colors.grey.shade500,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(
+                    color: Color(0xFF0052CC),
+                    width: 1.5,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(
+                    color: Colors.grey.shade300,
+                  ),
+                ),
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your ${_getIdLabel.toLowerCase()}';
+                }
+                return null;
+              },
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Password field with enhanced styling
+          Focus(
+            onFocusChange: (hasFocus) =>
+                setState(() => _isPasswordFieldFocused = hasFocus),
+            child: TextFormField(
+              controller: _passwordController,
+              obscureText: _isObscured,
+              decoration: InputDecoration(
+                labelText: 'Password',
+                prefixIcon: Icon(
+                  Icons.lock_outline,
+                  color: _isPasswordFieldFocused
+                      ? const Color(0xFF0052CC)
+                      : Colors.grey.shade500,
+                ),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _isObscured ? Icons.visibility : Icons.visibility_off,
+                    color: Colors.grey.shade500,
+                  ),
+                  onPressed: () {
+                    setState(() => _isObscured = !_isObscured);
+                  },
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(
+                    color: Color(0xFF0052CC),
+                    width: 1.5,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(
+                    color: Colors.grey.shade300,
+                  ),
+                ),
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your password';
+                }
+                return null;
+              },
+            ),
+          ),
+
+          // Security note
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: Colors.grey.shade200,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 20,
+                  color: Colors.blue.shade700,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _loginMode == LoginMode.student
+                        ? 'Use your registration number as password'
+                        : 'Use your faculty ID as password',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 30),
+
+          // Sign in button with enhanced styling
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _signIn,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0052CC),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: _isLoading
+                  ? SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.login, size: 20),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Sign In',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+
+          const SizedBox(height: 32),
+
+          // Enhanced Admin Login Section
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00357A),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.admin_panel_settings,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Administrator Access',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Secure login portal for Controllers and Superintendents',
+                  style: TextStyle(
+                    color: Color(0xFFCDCDCD),
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 40,
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    onEnter: (_) =>
+                        setState(() => _isHoveringAdminButton = true),
+                    onExit: (_) =>
+                        setState(() => _isHoveringAdminButton = false),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      child: ElevatedButton.icon(
+                        onPressed: _navigateToAdminLogin,
+                        icon: const Icon(
+                          Icons.shield_outlined,
+                          size: 18,
+                        ),
+                        label: const Text('Secure Login'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _isHoveringAdminButton
+                              ? const Color(0xFF0047B3)
+                              : const Color(0xFF004099),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
-// Custom painter for animated background patterns
-class BackgroundPatternPainter extends CustomPainter {
+// Improved pattern painter for subtle background pattern
+class SubtlePatternPainter extends CustomPainter {
   final Color color;
 
-  BackgroundPatternPainter({required this.color});
+  SubtlePatternPainter({required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = color
-      ..strokeWidth = 1.0
+      ..strokeWidth = 0.5
       ..style = PaintingStyle.stroke;
 
-    const spacing = 30.0;
+    const spacing = 40.0;
     final xCount = (size.width / spacing).ceil();
     final yCount = (size.height / spacing).ceil();
 
+    // Draw grid pattern with alternating elements
     for (var i = 0; i < xCount; i++) {
       for (var j = 0; j < yCount; j++) {
         final x = i * spacing;
         final y = j * spacing;
-        final rect = Rect.fromLTWH(x, y, spacing, spacing);
-        canvas.drawRect(rect, paint);
+
+        // Draw small circles or squares in alternating pattern
+        if ((i + j) % 2 == 0) {
+          // Draw small squares
+          final rect = Rect.fromCenter(
+            center: Offset(x, y),
+            width: 4,
+            height: 4,
+          );
+          canvas.drawRect(rect, paint);
+        } else {
+          // Draw small circles
+          canvas.drawCircle(Offset(x, y), 2, paint);
+        }
       }
     }
   }
@@ -775,46 +1378,60 @@ class BackgroundPatternPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class AnimatedGradientPainter extends CustomPainter {
-  final double animation;
-  final Color colorOne;
-  final Color colorTwo;
+// Feature item class
+class FeatureItem {
+  final IconData icon;
+  final String title;
+  final String description;
 
-  AnimatedGradientPainter({
-    required this.animation,
-    required this.colorOne,
-    required this.colorTwo,
+  FeatureItem({
+    required this.icon,
+    required this.title,
+    required this.description,
   });
+}
 
+// Custom background painter for feature card
+class FeatureCardBackgroundPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment(
-          math.cos(animation) * 1.5,
-          math.sin(animation) * 1.5,
-        ),
-        end: Alignment(
-          math.cos(animation + math.pi) * 1.5,
-          math.sin(animation + math.pi) * 1.5,
-        ),
-        colors: [
-          colorOne,
-          colorOne.withOpacity(0.6),
-          colorTwo,
-          colorTwo.withOpacity(0.6),
-          colorOne,
-        ],
-        stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
-      ).createShader(Offset.zero & size);
+    // Gradient background
+    final Rect rect = Rect.fromLTWH(0, 0, size.width, size.height);
+    final Gradient gradient = LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        const Color(0xFF0052CC).withOpacity(0.4),
+        const Color(0xFF00357A).withOpacity(0.1),
+      ],
+    );
+    final Paint paint = Paint()..shader = gradient.createShader(rect);
+    canvas.drawRect(rect, paint);
 
-    canvas.drawRect(Offset.zero & size, paint);
+    // Drawing diagonal lines
+    final linePaint = Paint()
+      ..color = Colors.white.withOpacity(0.05)
+      ..strokeWidth = 1;
+
+    for (int i = 0; i < size.width + size.height; i += 40) {
+      canvas.drawLine(
+        Offset(i.toDouble(), 0),
+        Offset(0, i.toDouble()),
+        linePaint,
+      );
+    }
+
+    // Drawing small circles
+    final circlePaint = Paint()
+      ..color = Colors.white.withOpacity(0.1)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(
+        Offset(size.width * 0.85, size.height * 0.2), 40, circlePaint);
+    canvas.drawCircle(
+        Offset(size.width * 0.1, size.height * 0.8), 25, circlePaint);
   }
 
   @override
-  bool shouldRepaint(covariant AnimatedGradientPainter oldDelegate) {
-    return animation != oldDelegate.animation ||
-        colorOne != oldDelegate.colorOne ||
-        colorTwo != oldDelegate.colorTwo;
-  }
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

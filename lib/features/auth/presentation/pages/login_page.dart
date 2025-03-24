@@ -1185,8 +1185,8 @@ class _LoginPageState extends ConsumerState<LoginPage>
                 Expanded(
                   child: Text(
                     _loginMode == LoginMode.student
-                        ? 'Use your registration number as password'
-                        : 'Use your faculty ID as password',
+                        ? 'Please Verify Your Password'
+                        : 'Please Verify Your Password',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.grey.shade700,

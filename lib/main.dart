@@ -58,6 +58,8 @@ class _MyAppState extends ConsumerState<MyApp> {
             _isLoading ? const LoadingScreen() : const AuthWrapper(),
         '/login': (context) => const LoginPage(),
         '/superintendent': (context) => const SuperintendentDashboardPage(),
+        '/superintendent/dashboard': (context) =>
+            const SuperintendentDashboardPage(),
         '/controller': (context) => const ControllerDashboardPage(),
         '/seating_management': (context) => const SeatingManagementPage(),
       },

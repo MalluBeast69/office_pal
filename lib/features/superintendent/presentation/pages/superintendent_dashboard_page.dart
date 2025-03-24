@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:office_pal/core/utils/screen_utils.dart';
+import 'package:loading_animation_widget/loading_animation_widget.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:google_fonts/google_fonts.dart';
 import 'faculty_management_page.dart';
 import 'student_management_page.dart';
 import 'course_management_page.dart';
@@ -21,7 +24,8 @@ class SuperintendentDashboardPage extends ConsumerStatefulWidget {
 }
 
 class _SuperintendentDashboardPageState
-    extends ConsumerState<SuperintendentDashboardPage> {
+    extends ConsumerState<SuperintendentDashboardPage>
+    with TickerProviderStateMixin {
   List<Map<String, dynamic>> notifications = [];
   bool isLoading = false;
   Map<String, dynamic> stats = {
@@ -35,6 +39,27 @@ class _SuperintendentDashboardPageState
   };
   String _currentSection = 'dashboard';
 
+  // Animation controllers
+  late AnimationController _fadeInController;
+  late AnimationController _slideController;
+
+  // Animations
+  late Animation<double> _fadeInAnimation;
+  late Animation<Offset> _slideAnimation;
+
+  // Hover states for menu items
+  Map<String, bool> _isHovering = {
+    'dashboard': false,
+    'students': false,
+    'courses': false,
+    'departments': false,
+    'faculty': false,
+    'halls': false,
+    'exams': false,
+    'seating': false,
+    'logout': false,
+  };
+
   @override
   void initState() {
     super.initState();
@@ -44,6 +69,43 @@ class _SuperintendentDashboardPageState
         showScreenSizeWarning(context);
       }
     });
+
+    // Initialize animations
+    _fadeInController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+
+    _fadeInAnimation = CurvedAnimation(
+      parent: _fadeInController,
+      curve: Curves.easeIn,
+    );
+
+    _slideController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.1),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _slideController,
+        curve: Curves.easeOutCubic,
+      ),
+    );
+
+    // Start animations
+    _fadeInController.forward();
+    _slideController.forward();
+  }
+
+  @override
+  void dispose() {
+    _fadeInController.dispose();
+    _slideController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -275,13 +337,26 @@ class _SuperintendentDashboardPageState
     final bool? result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Notification'),
-        content:
-            const Text('Are you sure you want to delete this notification?'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Text(
+          'Delete Notification',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to delete this notification?',
+          style: GoogleFonts.poppins(),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(),
+            ),
           ),
           FilledButton(
             onPressed: () {
@@ -289,8 +364,14 @@ class _SuperintendentDashboardPageState
             },
             style: FilledButton.styleFrom(
               backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
-            child: const Text('Delete'),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.poppins(),
+            ),
           ),
         ],
       ),
@@ -334,848 +415,858 @@ class _SuperintendentDashboardPageState
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     final isSmallScreen = screenSize.width < 600;
+    final theme = Theme.of(context);
+    final isWeb = kIsWeb;
 
     return Scaffold(
-      appBar: isSmallScreen
-          ? AppBar(
-              title: const Text('Superintendent Dashboard'),
-              elevation: 0,
-              backgroundColor: Colors.transparent,
-              foregroundColor: Theme.of(context).colorScheme.onSurface,
-            )
-          : null,
-      body: Row(
-        children: [
-          if (!isSmallScreen) _buildSidebar(),
-          Expanded(
-            child: isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : RefreshIndicator(
-                    onRefresh: _loadData,
-                    child: SingleChildScrollView(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: isSmallScreen ? 12.0 : 24.0,
-                        vertical: isSmallScreen ? 12.0 : 24.0,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Top Bar with Notifications
-                          if (!isSmallScreen)
-                            Align(
-                              alignment: Alignment.topRight,
-                              child: Stack(
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.notifications),
-                                    onPressed: () => _showNotificationsDialog(),
-                                  ),
-                                  if (notifications
-                                      .where((n) => n['status'] == 'pending')
-                                      .isNotEmpty)
-                                    Positioned(
-                                      right: 8,
-                                      top: 8,
-                                      child: Container(
-                                        padding: const EdgeInsets.all(2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.red,
-                                          borderRadius:
-                                              BorderRadius.circular(10),
-                                        ),
-                                        constraints: const BoxConstraints(
-                                          minWidth: 16,
-                                          minHeight: 16,
-                                        ),
-                                        child: Text(
-                                          notifications
-                                              .where((n) =>
-                                                  n['status'] == 'pending')
-                                              .length
-                                              .toString(),
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 10,
-                                          ),
-                                          textAlign: TextAlign.center,
-                                        ),
+      body: isLoading
+          ? _buildLoadingScreen()
+          : Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.blue.shade50,
+                    Colors.white,
+                  ],
+                ),
+              ),
+              child: SafeArea(
+                child: Row(
+                  children: [
+                    if (!isSmallScreen) _buildSidebar(),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: _loadData,
+                        child: CustomScrollView(
+                          slivers: [
+                            SliverAppBar(
+                              pinned: true,
+                              floating: true,
+                              automaticallyImplyLeading: isSmallScreen,
+                              title: isSmallScreen
+                                  ? Text(
+                                      'Superintendent Dashboard',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w600,
                                       ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          // Welcome Section with Quick Stats
-                          Container(
-                            padding: const EdgeInsets.all(24),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Theme.of(context).colorScheme.primary,
-                                  Theme.of(context)
-                                      .colorScheme
-                                      .primaryContainer,
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Welcome, Superintendent',
-                                  style: TextStyle(
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Here\'s your overview for today',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.white.withOpacity(0.8),
-                                  ),
-                                ),
-                                const SizedBox(height: 24),
-                                Wrap(
-                                  spacing: 16,
-                                  runSpacing: 16,
-                                  children: [
-                                    _buildQuickStatCard(
-                                      'Students',
-                                      stats['students'],
-                                      Icons.people,
-                                      Colors.blue,
-                                    ),
-                                    _buildQuickStatCard(
-                                      'Courses',
-                                      stats['courses'],
-                                      Icons.book,
-                                      Colors.green,
-                                    ),
-                                    _buildQuickStatCard(
-                                      'Departments',
-                                      stats['departments'],
-                                      Icons.business,
-                                      Colors.orange,
-                                    ),
-                                    _buildQuickStatCard(
-                                      'Faculty',
-                                      stats['faculty'],
-                                      Icons.school,
-                                      Colors.purple,
-                                    ),
-                                    _buildQuickStatCard(
-                                      'Halls',
-                                      stats['halls'],
-                                      Icons.meeting_room,
-                                      Colors.teal,
-                                    ),
-                                    _buildQuickStatCard(
-                                      'Exams',
-                                      stats['exams'],
-                                      Icons.assignment,
-                                      Colors.pink,
-                                    ),
-                                  ],
-                                ),
+                                    )
+                                  : null,
+                              backgroundColor: isWeb
+                                  ? Colors.white.withOpacity(0.8)
+                                  : theme.scaffoldBackgroundColor,
+                              actions: [
+                                _buildNotificationButton(),
+                                const SizedBox(width: 8),
+                                _buildProfileButton(),
+                                const SizedBox(width: 16),
                               ],
+                              elevation: 0,
                             ),
-                          ),
-                          const SizedBox(height: 32),
-                          // Recent Activity Section
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                flex: 2,
-                                child: Card(
-                                  elevation: 2,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(24),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              Icons.history,
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .primary,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            const Text(
-                                              'Recent Activity',
-                                              style: TextStyle(
-                                                fontSize: 20,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 16),
-                                        // Recent Activity List
-                                        ...notifications
-                                            .take(5)
-                                            .map((notification) => ListTile(
-                                                  leading: CircleAvatar(
-                                                    backgroundColor: notification[
-                                                                'status'] ==
-                                                            'pending'
-                                                        ? Colors.orange
-                                                            .withOpacity(0.2)
-                                                        : notification[
-                                                                    'status'] ==
-                                                                'approved'
-                                                            ? Colors.green
-                                                                .withOpacity(
-                                                                    0.2)
-                                                            : Colors.red
-                                                                .withOpacity(
-                                                                    0.2),
-                                                    child: Icon(
-                                                      notification['type'] ==
-                                                              'leave_request'
-                                                          ? Icons.event_busy
-                                                          : Icons.notifications,
-                                                      color: notification[
-                                                                  'status'] ==
-                                                              'pending'
-                                                          ? Colors.orange
-                                                          : notification[
-                                                                      'status'] ==
-                                                                  'approved'
-                                                              ? Colors.green
-                                                              : Colors.red,
-                                                    ),
-                                                  ),
-                                                  title: Text(
-                                                      notification['title'] ??
-                                                          ''),
-                                                  subtitle: Text(
-                                                    notification['message'] ??
-                                                        '',
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
-                                                  trailing: Text(
-                                                    notification['status']
-                                                            ?.toUpperCase() ??
-                                                        'PENDING',
-                                                    style: TextStyle(
-                                                      color: notification[
-                                                                  'status'] ==
-                                                              'pending'
-                                                          ? Colors.orange
-                                                          : notification[
-                                                                      'status'] ==
-                                                                  'approved'
-                                                              ? Colors.green
-                                                              : Colors.red,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
-                                                )),
-                                      ],
-                                    ),
-                                  ),
+                            SliverFadeTransition(
+                              opacity: _fadeInAnimation,
+                              sliver: SliverToBoxAdapter(
+                                child: SlideTransition(
+                                  position: _slideAnimation,
+                                  child: _buildDashboardContent(
+                                      isSmallScreen, theme),
                                 ),
                               ),
-                              if (!isSmallScreen) const SizedBox(width: 24),
-                              if (!isSmallScreen)
-                                Expanded(
-                                  child: Card(
-                                    elevation: 2,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(24),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                Icons.calendar_today,
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .primary,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              const Text(
-                                                'Upcoming Events',
-                                                style: TextStyle(
-                                                  fontSize: 20,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 16),
-                                          // Upcoming Events List
-                                          _buildUpcomingEvent(
-                                            'Next Exam',
-                                            'Mathematics Final',
-                                            'Tomorrow, 9:00 AM',
-                                            Icons.assignment,
-                                            Colors.blue,
-                                          ),
-                                          const SizedBox(height: 12),
-                                          _buildUpcomingEvent(
-                                            'Faculty Meeting',
-                                            'Department Heads',
-                                            'Friday, 2:00 PM',
-                                            Icons.groups,
-                                            Colors.purple,
-                                          ),
-                                          const SizedBox(height: 12),
-                                          _buildUpcomingEvent(
-                                            'Results Due',
-                                            'First Semester',
-                                            'Next Week',
-                                            Icons.assessment,
-                                            Colors.orange,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-          ),
-        ],
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+
+  Widget _buildLoadingScreen() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.blue.shade100,
+            Colors.blue.shade50,
+          ],
+        ),
       ),
-      drawer: isSmallScreen
-          ? Drawer(
-              child: _buildSidebar(),
-            )
-          : null,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            LoadingAnimationWidget.staggeredDotsWave(
+              color: Colors.blue,
+              size: 50,
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Office Pal',
+              style: GoogleFonts.poppins(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Loading Dashboard...',
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                color: Colors.blue.shade700,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildSidebar() {
-    final user = Supabase.instance.client.auth.currentUser;
-    final email = user?.email ?? 'superintendent@example.com';
-    final name =
-        email.split('@')[0].split('.').map((s) => s.capitalize()).join(' ');
-
-    return Container(
-      width: 280,
-      color: Theme.of(context).colorScheme.primary,
-      child: Column(
-        children: [
-          // Profile Section
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            color: Theme.of(context).colorScheme.primary,
-            child: Column(
-              children: [
-                CircleAvatar(
-                  radius: 40,
-                  backgroundColor: Colors.white,
-                  child: Text(
-                    name.substring(0, 2).toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.primary,
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 3,
+      color: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topRight: Radius.circular(20),
+          bottomRight: Radius.circular(20),
+        ),
+      ),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 280,
+        height: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.all(10),
+                    child: Icon(
+                      Icons.admin_panel_settings,
+                      size: 32,
+                      color: Colors.blue.shade700,
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                  const SizedBox(width: 16),
+                  Text(
+                    'Office Pal',
+                    style: GoogleFonts.poppins(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue.shade700,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Superintendent',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.white.withOpacity(0.8),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          // Navigation Section
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(24),
-                  topRight: Radius.circular(24),
+            const SizedBox(height: 40),
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  _buildSidebarItem('dashboard', 'Dashboard', Icons.dashboard),
+                  _buildSidebarItem('students', 'Students', Icons.people),
+                  _buildSidebarItem('courses', 'Courses', Icons.book),
+                  _buildSidebarItem(
+                      'departments', 'Departments', Icons.business),
+                  _buildSidebarItem('faculty', 'Faculty', Icons.school),
+                  _buildSidebarItem('halls', 'Halls', Icons.meeting_room),
+                  _buildSidebarItem('exams', 'Exams', Icons.assignment),
+                  _buildSidebarItem('seating', 'Seating', Icons.event_seat),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Divider(color: Colors.grey.shade200),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: MouseRegion(
+                onEnter: (_) => setState(() => _isHovering['logout'] = true),
+                onExit: (_) => setState(() => _isHovering['logout'] = false),
+                child: ListTile(
+                  leading: Icon(
+                    Icons.logout,
+                    color: _isHovering['logout'] ?? false
+                        ? Colors.red
+                        : Colors.grey.shade600,
+                  ),
+                  title: Text(
+                    'Logout',
+                    style: GoogleFonts.poppins(
+                      color: _isHovering['logout'] ?? false
+                          ? Colors.red
+                          : Colors.grey.shade600,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  onTap: () => _signOut(context),
                 ),
               ),
-              child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSidebarItem(String id, String title, IconData icon) {
+    final isSelected = _currentSection == id;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovering[id] = true),
+        onExit: (_) => setState(() => _isHovering[id] = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Colors.blue.shade50
+                : _isHovering[id] ?? false
+                    ? Colors.grey.shade100
+                    : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: ListTile(
+            leading: Icon(
+              icon,
+              color: isSelected
+                  ? Colors.blue.shade700
+                  : _isHovering[id] ?? false
+                      ? Colors.blue.shade700
+                      : Colors.grey.shade600,
+            ),
+            title: Text(
+              title,
+              style: GoogleFonts.poppins(
+                color: isSelected
+                    ? Colors.blue.shade700
+                    : _isHovering[id] ?? false
+                        ? Colors.blue.shade700
+                        : Colors.grey.shade800,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+            onTap: () {
+              if (id == 'dashboard') {
+                setState(() => _currentSection = id);
+              } else {
+                _navigateToManagement(id);
+              }
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNotificationButton() {
+    final pendingCount =
+        notifications.where((n) => n['status'] == 'pending').length;
+
+    return Stack(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.notifications_outlined),
+          splashRadius: 24,
+          onPressed: () => _showNotificationsDialog(),
+        ),
+        if (pendingCount > 0)
+          Positioned(
+            right: 8,
+            top: 8,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              constraints: const BoxConstraints(
+                minWidth: 16,
+                minHeight: 16,
+              ),
+              child: Text(
+                pendingCount.toString(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildProfileButton() {
+    return Container(
+      margin: const EdgeInsets.only(right: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(30),
+        onTap: () {
+          // Show profile options or logout
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: Colors.blue.shade100,
+                child: Icon(
+                  Icons.person,
+                  size: 20,
+                  color: Colors.blue.shade700,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Superintendent',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDashboardContent(bool isSmallScreen, ThemeData theme) {
+    return Padding(
+      padding: EdgeInsets.all(isSmallScreen ? 16 : 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildWelcomeSection(theme),
+          const SizedBox(height: 32),
+          _buildStatsGrid(isSmallScreen),
+          const SizedBox(height: 32),
+          _buildRecentActivity(isSmallScreen),
+          const SizedBox(height: 32),
+          _buildTasksSection(),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWelcomeSection(ThemeData theme) {
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
+      color: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              theme.colorScheme.primary,
+              theme.colorScheme.primary.withOpacity(0.8),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.blue.withOpacity(0.1),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildNavItem(
-                    'Dashboard',
-                    Icons.dashboard,
-                    'dashboard',
+                  Text(
+                    'Welcome back, Superintendent',
+                    style: GoogleFonts.poppins(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
                   ),
-                  _buildNavItem(
-                    'Students',
-                    Icons.people,
-                    'students',
+                  const SizedBox(height: 8),
+                  Text(
+                    'Here\'s what\'s happening with your examination management today',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      color: Colors.white.withOpacity(0.8),
+                    ),
                   ),
-                  _buildNavItem(
-                    'Courses',
-                    Icons.book,
-                    'courses',
-                  ),
-                  _buildNavItem(
-                    'Departments',
-                    Icons.business,
-                    'departments',
-                  ),
-                  _buildNavItem(
-                    'Faculty',
-                    Icons.school,
-                    'faculty',
-                  ),
-                  _buildNavItem(
-                    'Halls',
-                    Icons.meeting_room,
-                    'halls',
-                  ),
-                  _buildNavItem(
-                    'Exams',
-                    Icons.assignment,
-                    'exams',
-                  ),
-                  _buildNavItem(
-                    'Seating',
-                    Icons.event_seat,
-                    'seating',
-                  ),
-                  // Notifications
-                  Stack(
+                  const SizedBox(height: 24),
+                  Row(
                     children: [
-                      _buildNavItem(
-                        'Notifications',
-                        Icons.notifications,
-                        'notifications',
-                      ),
-                      if (notifications
-                          .where((n) => n['status'] == 'pending')
-                          .isNotEmpty)
-                        Positioned(
-                          right: 24,
-                          top: 12,
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              notifications
-                                  .where((n) => n['status'] == 'pending')
-                                  .length
-                                  .toString(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                      ElevatedButton.icon(
+                        onPressed: () => _navigateToManagement('exams'),
+                        icon: const Icon(Icons.add),
+                        label: const Text('New Exam'),
+                        style: ElevatedButton.styleFrom(
+                          foregroundColor: Colors.blue.shade700,
+                          backgroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 16,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
                           ),
                         ),
+                      ),
+                      const SizedBox(width: 16),
+                      OutlinedButton.icon(
+                        onPressed: () => _navigateToManagement('seating'),
+                        icon: const Icon(Icons.event_seat),
+                        label: const Text('Manage Seating'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 16,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ],
               ),
             ),
-          ),
-          // Logout Button
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Theme.of(context).colorScheme.surface,
-            child: Card(
-              elevation: 0,
-              color:
-                  Theme.of(context).colorScheme.errorContainer.withOpacity(0.1),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(
-                  color: Theme.of(context).colorScheme.error.withOpacity(0.2),
-                  width: 1,
+            if (MediaQuery.of(context).size.width >= 900)
+              Container(
+                width: 240,
+                height: 180,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Center(
+                  child: Icon(
+                    Icons.school,
+                    size: 80,
+                    color: Colors.white.withOpacity(0.6),
+                  ),
                 ),
               ),
-              child: InkWell(
-                onTap: () => _signOut(context),
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.logout,
-                        color: Theme.of(context).colorScheme.error,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Logout',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatsGrid(bool isSmallScreen) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Quick Statistics',
+          style: GoogleFonts.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          elevation: 3,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildCircularStat('Students', stats['students'],
+                        Icons.people, Colors.blue.shade700),
+                    _buildCircularStat('Faculty', stats['faculty'],
+                        Icons.school, Colors.purple.shade700),
+                    if (!isSmallScreen)
+                      _buildCircularStat('Courses', stats['courses'],
+                          Icons.book, Colors.green.shade700),
+                  ],
+                ),
+                const SizedBox(height: 32),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    if (isSmallScreen)
+                      _buildCircularStat('Courses', stats['courses'],
+                          Icons.book, Colors.green.shade700),
+                    _buildCircularStat('Departments', stats['departments'],
+                        Icons.business, Colors.orange.shade700),
+                    _buildCircularStat('Halls', stats['halls'],
+                        Icons.meeting_room, Colors.teal.shade700),
+                    if (!isSmallScreen)
+                      _buildCircularStat('Exams', stats['exams'],
+                          Icons.assignment, Colors.red.shade700),
+                  ],
+                ),
+                if (isSmallScreen)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 32),
+                    child: _buildCircularStat('Exams', stats['exams'],
+                        Icons.assignment, Colors.red.shade700),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCircularStat(
+      String title, int count, IconData icon, Color color) {
+    // Calculate a percentage for the circle based on the count
+    // Just for visual effect, not meant to be precise
+    final double percentage = count > 0 ? (count / 100.0).clamp(0.1, 1.0) : 0.1;
+
+    return InkWell(
+      onTap: () => _navigateToManagement(title.toLowerCase()),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 100,
+        child: Column(
+          children: [
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  height: 80,
+                  width: 80,
+                  child: CircularProgressIndicator(
+                    value: percentage,
+                    strokeWidth: 8,
+                    backgroundColor: color.withOpacity(0.1),
+                    valueColor: AlwaysStoppedAnimation<Color>(color),
+                  ),
+                ),
+                Container(
+                  height: 60,
+                  width: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: color.withOpacity(0.1),
+                        blurRadius: 4,
+                        spreadRadius: 1,
                       ),
                     ],
                   ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNavItem(String title, IconData icon, String section) {
-    final isSelected = _currentSection == section;
-    final color =
-        isSelected ? Theme.of(context).colorScheme.primary : Colors.grey;
-
-    return ListTile(
-      onTap: () {
-        setState(() => _currentSection = section);
-        if (section == 'notifications') {
-          _showNotificationsDialog();
-        } else if (section != 'dashboard') {
-          _navigateToManagement(section);
-        }
-      },
-      selected: isSelected,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      leading: Icon(icon, color: color),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: color,
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-        ),
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-    );
-  }
-
-  Widget _buildQuickStatCard(
-      String title, int value, IconData icon, Color color) {
-    return Container(
-      width: 180,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            value.toString(),
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[600],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUpcomingEvent(
-    String title,
-    String subtitle,
-    String time,
-    IconData icon,
-    Color color,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: color),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 12,
-                  ),
-                ),
-                Text(
-                  time,
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.w500,
-                    fontSize: 12,
+                  child: Center(
+                    child: Icon(
+                      icon,
+                      color: color,
+                      size: 28,
+                    ),
                   ),
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            Text(
+              count.toString(),
+              style: GoogleFonts.poppins(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            Text(
+              title,
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey.shade700,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecentActivity(bool isSmallScreen) {
+    final pendingNotifications =
+        notifications.where((n) => n['status'] == 'pending').take(5).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Recent Notifications',
+              style: GoogleFonts.poppins(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            TextButton(
+              onPressed: () => _showNotificationsDialog(),
+              child: const Text('View All'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: pendingNotifications.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.notifications_none,
+                          size: 40,
+                          color: Colors.grey.shade400,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'No pending notifications',
+                          style: GoogleFonts.poppins(
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: pendingNotifications.length,
+                  separatorBuilder: (context, index) => Divider(
+                    color: Colors.grey.shade200,
+                    height: 1,
+                  ),
+                  itemBuilder: (context, index) {
+                    final notification = pendingNotifications[index];
+                    return _buildNotificationItem(notification);
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNotificationItem(Map<String, dynamic> notification) {
+    IconData icon;
+    Color color;
+
+    switch (notification['type']) {
+      case 'leave_request':
+        icon = Icons.event_busy;
+        color = Colors.orange;
+        break;
+      case 'exam_update':
+        icon = Icons.assignment;
+        color = Colors.blue;
+        break;
+      default:
+        icon = Icons.notifications;
+        color = Colors.grey;
+    }
+
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, color: color),
+      ),
+      title: Text(
+        notification['title'] ?? 'Notification',
+        style: GoogleFonts.poppins(
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      subtitle: Text(
+        notification['message'] ?? '',
+        style: GoogleFonts.poppins(
+          fontSize: 13,
+          color: Colors.grey.shade600,
+        ),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.check, color: Colors.green),
+            splashRadius: 24,
+            onPressed: () =>
+                _updateNotificationStatus(notification, 'approved'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, color: Colors.red),
+            splashRadius: 24,
+            onPressed: () =>
+                _updateNotificationStatus(notification, 'declined'),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTasksSection() {
+    // This is a placeholder for future task management functionality
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Upcoming Tasks',
+          style: GoogleFonts.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Center(
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.task_alt,
+                    size: 40,
+                    color: Colors.grey.shade400,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'No upcoming tasks',
+                    style: GoogleFonts.poppins(
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   void _showNotificationsDialog() {
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => Dialog(
-          child: Container(
-            width: 600,
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.8,
-            ),
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxWidth: 600,
+            maxHeight: 600,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      const Text(
-                        'Notifications',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
+                Row(
+                  children: [
+                    Text(
+                      'Notifications',
+                      style: GoogleFonts.poppins(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
                       ),
-                      const Spacer(),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                      splashRadius: 24,
+                    ),
+                  ],
                 ),
-                const Divider(height: 1),
+                const SizedBox(height: 16),
                 Expanded(
                   child: notifications.isEmpty
-                      ? const Center(
-                          child: Text('No notifications'),
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.notifications_none,
+                                size: 48,
+                                color: Colors.grey.shade400,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No notifications',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
                         )
-                      : ListView.builder(
+                      : ListView.separated(
                           itemCount: notifications.length,
+                          separatorBuilder: (context, index) => Divider(
+                            color: Colors.grey.shade200,
+                          ),
                           itemBuilder: (context, index) {
                             final notification = notifications[index];
-                            final metadata =
-                                jsonDecode(notification['metadata'] ?? '{}');
-                            return Dismissible(
-                              key: Key(notification['id'].toString()),
-                              background: Container(
-                                color: Colors.red,
-                                alignment: Alignment.centerRight,
-                                padding: const EdgeInsets.only(right: 16.0),
-                                child: const Icon(
-                                  Icons.delete,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              direction: DismissDirection.endToStart,
-                              confirmDismiss: (direction) async {
-                                final result =
-                                    await _showDeleteConfirmation(notification);
-                                if (result && mounted) {
-                                  setState(() {}); // Refresh the dialog's UI
-                                }
-                                return result;
-                              },
-                              child: Card(
-                                margin: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
-                                child: ListTile(
-                                  title: Text(notification['title'] ?? ''),
-                                  subtitle: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(notification['message'] ?? ''),
-                                      if (notification['type'] ==
-                                              'leave_request' &&
-                                          metadata != null)
-                                        Padding(
-                                          padding:
-                                              const EdgeInsets.only(top: 8.0),
-                                          child: Text(
-                                            'From: ${metadata['from_date'] ?? 'N/A'} To: ${metadata['to_date'] ?? 'N/A'}',
-                                          ),
-                                        ),
-                                      const SizedBox(height: 8),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: notification['status'] ==
-                                                  'pending'
-                                              ? Colors.orange.withOpacity(0.1)
-                                              : notification['status'] ==
-                                                      'approved'
-                                                  ? Colors.green
-                                                      .withOpacity(0.1)
-                                                  : Colors.red.withOpacity(0.1),
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                          border: Border.all(
-                                            color: notification['status'] ==
-                                                    'pending'
-                                                ? Colors.orange
-                                                : notification['status'] ==
-                                                        'approved'
-                                                    ? Colors.green
-                                                    : Colors.red,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          (notification['status'] ?? 'pending')
-                                              .toUpperCase(),
-                                          style: TextStyle(
-                                            color: notification['status'] ==
-                                                    'pending'
-                                                ? Colors.orange
-                                                : notification['status'] ==
-                                                        'approved'
-                                                    ? Colors.green
-                                                    : Colors.red,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  trailing: notification['status'] == 'pending'
-                                      ? Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            IconButton(
-                                              icon: const Icon(
-                                                Icons.check_circle_outline,
-                                                color: Colors.green,
-                                              ),
-                                              onPressed: () async {
-                                                await _updateNotificationStatus(
-                                                    notification, 'approved');
-                                                if (mounted) {
-                                                  Navigator.pop(context);
-                                                }
-                                              },
-                                            ),
-                                            IconButton(
-                                              icon: const Icon(
-                                                Icons.cancel_outlined,
-                                                color: Colors.red,
-                                              ),
-                                              onPressed: () async {
-                                                await _updateNotificationStatus(
-                                                    notification, 'declined');
-                                                if (mounted) {
-                                                  Navigator.pop(context);
-                                                }
-                                              },
-                                            ),
-                                          ],
-                                        )
-                                      : IconButton(
-                                          icon: const Icon(
-                                            Icons.delete_outline,
-                                            color: Colors.red,
-                                          ),
-                                          onPressed: () async {
-                                            final result =
-                                                await _showDeleteConfirmation(
-                                                    notification);
-                                            if (result && mounted) {
-                                              setState(
-                                                  () {}); // Refresh the dialog's UI
-                                            }
-                                          },
-                                        ),
-                                  isThreeLine: true,
-                                ),
-                              ),
-                            );
+                            return _buildNotificationItem(notification);
                           },
                         ),
                 ),
@@ -1188,8 +1279,23 @@ class _SuperintendentDashboardPageState
   }
 }
 
-extension StringExtension on String {
-  String capitalize() {
-    return "${this[0].toUpperCase()}${substring(1)}";
+// Add this widget for SliverFadeTransition
+class SliverFadeTransition extends StatelessWidget {
+  final Animation<double> opacity;
+  final Widget sliver;
+
+  const SliverFadeTransition({
+    Key? key,
+    required this.opacity,
+    required this.sliver,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverAnimatedOpacity(
+      opacity: opacity.value,
+      duration: const Duration(milliseconds: 0),
+      sliver: sliver,
+    );
   }
 }

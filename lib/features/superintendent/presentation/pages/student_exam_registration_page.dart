@@ -4,7 +4,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:loading_animation_widget/loading_animation_widget.dart';
 
 class StudentExamRegistrationPage extends ConsumerStatefulWidget {
-  const StudentExamRegistrationPage({super.key});
+  final String? studentId;
+
+  const StudentExamRegistrationPage({
+    super.key,
+    this.studentId,
+  });
 
   @override
   ConsumerState<StudentExamRegistrationPage> createState() =>
@@ -39,6 +44,11 @@ class _StudentExamRegistrationPageState
   void initState() {
     super.initState();
     _loadData();
+
+    // If studentId is provided, pre-select it
+    if (widget.studentId != null) {
+      _selectedStudent = widget.studentId;
+    }
   }
 
   @override
@@ -51,7 +61,7 @@ class _StudentExamRegistrationPageState
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
-      // Load students
+      // Load students with pagination for better performance
       final studentsResponse = await Supabase.instance.client
           .from('student')
           .select('student_reg_no, student_name, dept_id, semester')
@@ -83,6 +93,23 @@ class _StudentExamRegistrationPageState
           // Initialize filtered lists
           _filteredStudents = _students;
           _filteredCourses = _courses;
+
+          // If studentId is provided, filter and scroll to that student
+          if (widget.studentId != null) {
+            _selectedStudent = widget.studentId;
+            final student = _students.firstWhere(
+              (s) => s['student_reg_no'] == widget.studentId,
+              orElse: () => <String, dynamic>{},
+            );
+
+            if (student.isNotEmpty) {
+              _selectedDepartment = student['dept_id'] as String;
+              _selectedSemester = student['semester'] as int;
+              _filterStudents();
+              _filterCourses();
+            }
+          }
+
           _isLoading = false;
         });
       }
@@ -216,68 +243,164 @@ class _StudentExamRegistrationPageState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Register Student for Exam'),
+        title: Text(
+          'Register Student for Exam',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         centerTitle: true,
+        elevation: 2,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        actions: [
+          if (_isLoading)
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Center(
+                child: SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ),
+            )
+        ],
       ),
-      body: _isLoading
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.blue.shade50,
+              Colors.white,
+            ],
+          ),
+        ),
+        child: _isLoading
           ? Center(
               child: LoadingAnimationWidget.staggeredDotsWave(
                 color: Theme.of(context).colorScheme.primary,
                 size: 50,
               ),
             )
-          : SingleChildScrollView(
+            : LayoutBuilder(
+                builder: (context, constraints) {
+                  // Responsive layout - use side-by-side for larger screens
+                  bool isWideScreen = constraints.maxWidth > 1000;
+
+                  return SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
               child: Form(
                 key: _formKey,
-                child: Column(
+                      child: isWideScreen
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  flex: 1,
+                                  child: _buildStudentSelection(),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  flex: 1,
+                                  child: _buildCourseSelection(),
+                                ),
+                              ],
+                            )
+                          : Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Student Filters
-                    Card(
+                                _buildStudentSelection(),
+                                const SizedBox(height: 16),
+                                _buildCourseSelection(),
+                              ],
+                            ),
+                    ),
+                  );
+                },
+              ),
+      ),
+      floatingActionButton: !_isLoading
+          ? FloatingActionButton.extended(
+              onPressed: _selectedStudent != null && _selectedCourse != null
+                  ? _registerStudent
+                  : null,
+              label: const Text('Register for Exam'),
+              icon: const Icon(Icons.assignment_turned_in),
+              backgroundColor:
+                  _selectedStudent != null && _selectedCourse != null
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.grey,
+            )
+          : null,
+    );
+  }
+
+  Widget _buildStudentSelection() {
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+            Row(
+              children: [
+                Icon(Icons.person, color: Colors.blue.shade700),
+                const SizedBox(width: 8),
+                Text(
                               'Student Selection',
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
+                    color: Colors.blue.shade700,
                               ),
+                ),
+              ],
                             ),
                             const SizedBox(height: 16),
+
+            // Search field
                             TextField(
                               controller: _studentSearchController,
                               decoration: InputDecoration(
-                                labelText: 'Search Student',
-                                hintText:
-                                    'Search by name or registration number',
+                hintText: 'Search by name or reg. number',
                                 prefixIcon: const Icon(Icons.search),
                                 border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                                 ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
                               ),
-                              onChanged: (value) => _filterStudents(),
+              onChanged: (value) {
+                _filterStudents();
+              },
                             ),
                             const SizedBox(height: 16),
+
+            // Filters row
                             Row(
                               children: [
                                 Expanded(
                                   child: DropdownButtonFormField<String>(
-                                    value: _selectedDepartment,
                                     decoration: const InputDecoration(
                                       labelText: 'Department',
                                       border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                     ),
+                    value: _selectedDepartment,
                                     items: [
-                                      const DropdownMenuItem(
+                      const DropdownMenuItem<String>(
                                         value: null,
                                         child: Text('All Departments'),
                                       ),
-                                      ..._departments
-                                          .map((dept) => DropdownMenuItem(
+                      ..._departments.map((dept) => DropdownMenuItem<String>(
                                                 value: dept,
                                                 child: Text(dept),
                                               )),
@@ -286,28 +409,28 @@ class _StudentExamRegistrationPageState
                                       setState(() {
                                         _selectedDepartment = value;
                                         _filterStudents();
-                                        _filterCourses();
                                       });
                                     },
                                   ),
                                 ),
-                                const SizedBox(width: 16),
+                const SizedBox(width: 8),
                                 Expanded(
                                   child: DropdownButtonFormField<int>(
-                                    value: _selectedSemester,
                                     decoration: const InputDecoration(
                                       labelText: 'Semester',
                                       border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                     ),
+                    value: _selectedSemester,
                                     items: [
-                                      const DropdownMenuItem(
+                      const DropdownMenuItem<int>(
                                         value: null,
                                         child: Text('All Semesters'),
                                       ),
-                                      ..._semesters
-                                          .map((sem) => DropdownMenuItem(
+                      ..._semesters.map((sem) => DropdownMenuItem<int>(
                                                 value: sem,
-                                                child: Text(sem.toString()),
+                            child: Text('Semester $sem'),
                                               )),
                                     ],
                                     onChanged: (value) {
@@ -321,141 +444,251 @@ class _StudentExamRegistrationPageState
                               ],
                             ),
                             const SizedBox(height: 16),
-                            DropdownButtonFormField<String>(
-                              value: _selectedStudent,
-                              decoration: InputDecoration(
-                                labelText: 'Select Student',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
+
+            // Student list with virtualization for better performance
+            SizedBox(
+              height: 300,
+              child: _filteredStudents.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No students found',
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 16,
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: _filteredStudents.length,
+                      itemBuilder: (context, index) {
+                        final student = _filteredStudents[index];
+                        final isSelected =
+                            _selectedStudent == student['student_reg_no'];
+
+                        return Card(
+                          color: isSelected ? Colors.blue.shade50 : null,
+                          elevation: isSelected ? 2 : 0,
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: BorderSide(
+                              color: isSelected
+                                  ? Colors.blue.shade300
+                                  : Colors.transparent,
+                              width: 1,
+                            ),
+                          ),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: isSelected
+                                  ? Colors.blue.shade100
+                                  : Colors.grey.shade200,
+                              child: Text(
+                                student['student_name']
+                                    .toString()
+                                    .substring(0, 1)
+                                    .toUpperCase(),
+                                style: TextStyle(
+                                  color: isSelected
+                                      ? Colors.blue.shade800
+                                      : Colors.grey.shade800,
                                 ),
                               ),
-                              items: _filteredStudents
-                                  .map<DropdownMenuItem<String>>((student) {
-                                return DropdownMenuItem<String>(
-                                  value: student['student_reg_no'] as String,
-                                  child: Text(
-                                    '${student['student_reg_no']} - ${student['student_name']} (${student['dept_id']} - Sem ${student['semester']})',
-                                  ),
-                                );
-                              }).toList(),
-                              onChanged: (value) {
-                                setState(() => _selectedStudent = value);
-                              },
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please select a student';
-                                }
-                                return null;
-                              },
+                            ),
+                            title: Text(
+                              student['student_name'] as String,
+                              style: TextStyle(
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '${student['student_reg_no']} | ${student['dept_id']} - Semester ${student['semester']}',
+                            ),
+                            selected: isSelected,
+                            onTap: () {
+                              setState(() {
+                                _selectedStudent =
+                                    student['student_reg_no'] as String;
+                              });
+                            },
+                          ),
+                        );
+                      },
+                    ),
                             ),
                           ],
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    // Course Filters
-                    Card(
+    );
+  }
+
+  Widget _buildCourseSelection() {
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+            Row(
+              children: [
+                Icon(Icons.book, color: Colors.blue.shade700),
+                const SizedBox(width: 8),
+                Text(
                               'Course Selection',
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
+                    color: Colors.blue.shade700,
                               ),
+                ),
+              ],
                             ),
                             const SizedBox(height: 16),
+
+            // Search field
                             TextField(
                               controller: _courseSearchController,
                               decoration: InputDecoration(
-                                labelText: 'Search Course',
-                                hintText: 'Search by name or code',
+                hintText: 'Search by course name or code',
                                 prefixIcon: const Icon(Icons.search),
                                 border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              onChanged: (value) => _filterCourses(),
-                            ),
-                            const SizedBox(height: 16),
-                            DropdownButtonFormField<String>(
-                              value: _selectedCourse,
-                              decoration: InputDecoration(
-                                labelText: 'Select Course',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              items: _filteredCourses
-                                  .map<DropdownMenuItem<String>>((course) {
-                                return DropdownMenuItem<String>(
-                                  value: course['course_code'] as String,
-                                  child: Text(
-                                    '${course['course_code']} - ${course['course_name']} (${course['dept_id']} - ${course['credit']} credits)',
-                                  ),
-                                );
-                              }).toList(),
-                              onChanged: (value) {
-                                setState(() => _selectedCourse = value);
-                              },
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please select a course';
-                                }
-                                return null;
-                              },
-                            ),
-                          ],
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              onChanged: (value) {
+                _filterCourses();
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // Course list with virtualization for better performance
+            SizedBox(
+              height: 300,
+              child: _filteredCourses.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No courses found',
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 16,
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    // Regular/Non-Regular Selection
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: SwitchListTile(
-                          title: const Text('Regular Student'),
-                          subtitle: Text(
-                            _isRegular ? 'Regular Exam' : 'Backlog Exam',
-                            style: TextStyle(
-                              color: _isRegular ? Colors.green : Colors.orange,
-                            ),
-                          ),
-                          value: _isRegular,
-                          onChanged: (value) {
-                            setState(() => _isRegular = value);
-                          },
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    // Submit Button
-                    SizedBox(
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _registerStudent,
-                        style: ElevatedButton.styleFrom(
+                    )
+                  : ListView.builder(
+                      itemCount: _filteredCourses.length,
+                      itemBuilder: (context, index) {
+                        final course = _filteredCourses[index];
+                        final isSelected =
+                            _selectedCourse == course['course_code'];
+
+                        return Card(
+                          color: isSelected ? Colors.blue.shade50 : null,
+                          elevation: isSelected ? 2 : 0,
+                          margin: const EdgeInsets.symmetric(vertical: 4),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(10),
+                            side: BorderSide(
+                              color: isSelected
+                                  ? Colors.blue.shade300
+                                  : Colors.transparent,
+                              width: 1,
+                            ),
                           ),
-                        ),
-                        child: _isLoading
-                            ? LoadingAnimationWidget.staggeredDotsWave(
-                                color: Theme.of(context).colorScheme.primary,
-                                size: 24,
-                              )
-                            : const Text(
-                                'Register for Exam',
-                                style: TextStyle(fontSize: 16),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: isSelected
+                                  ? Colors.blue.shade100
+                                  : Colors.grey.shade200,
+                              child: Text(
+                                course['course_code']
+                                    .toString()
+                                    .substring(0, 1)
+                                    .toUpperCase(),
+                                style: TextStyle(
+                                  color: isSelected
+                                      ? Colors.blue.shade800
+                                      : Colors.grey.shade800,
+                                ),
                               ),
+                            ),
+                            title: Text(
+                              course['course_name'] as String,
+                              style: TextStyle(
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                          subtitle: Text(
+                              '${course['course_code']} | ${course['dept_id']} - ${course['credit']} Credit',
+                            ),
+                            selected: isSelected,
+                            onTap: () {
+                              setState(() {
+                                _selectedCourse =
+                                    course['course_code'] as String;
+                              });
+                            },
+                          ),
+                        );
+                      },
+                    ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Registration type toggle
+            Card(
+              elevation: 0,
+              color: Colors.grey.shade100,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Row(
+                  children: [
+                    Text(
+                      'Registration Type:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: SegmentedButton<bool>(
+                        segments: const [
+                          ButtonSegment<bool>(
+                            value: true,
+                            label: Text('Regular'),
+                            icon: Icon(Icons.check_circle_outline),
+                          ),
+                          ButtonSegment<bool>(
+                            value: false,
+                            label: Text('Backlog'),
+                            icon: Icon(Icons.warning_amber_outlined),
+                          ),
+                        ],
+                        selected: {_isRegular},
+                        onSelectionChanged: (Set<bool> selection) {
+                          setState(() {
+                            _isRegular = selection.first;
+                          });
+                        },
                       ),
                     ),
                   ],
                 ),
+              ),
+            ),
+          ],
               ),
             ),
     );

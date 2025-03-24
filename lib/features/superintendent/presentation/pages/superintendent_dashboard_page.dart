@@ -64,6 +64,12 @@ class _SuperintendentDashboardPageState
   void initState() {
     super.initState();
     _loadData();
+
+    // Ensure notifications are refreshed after initial load
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadNotifications();
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (MediaQuery.of(context).size.width < 600) {
         showScreenSizeWarning(context);
@@ -109,6 +115,8 @@ class _SuperintendentDashboardPageState
   }
 
   Future<void> _loadData() async {
+    if (!mounted) return;
+
     setState(() => isLoading = true);
     try {
       // Load statistics
@@ -128,12 +136,6 @@ class _SuperintendentDashboardPageState
 
       final examResponse = await Supabase.instance.client.from('exam').select();
 
-      // Load notifications
-      final notificationsResponse = await Supabase.instance.client
-          .from('notifications')
-          .select()
-          .order('created_at', ascending: false);
-
       if (mounted) {
         setState(() {
           stats = {
@@ -145,11 +147,12 @@ class _SuperintendentDashboardPageState
             'exams': examResponse.length,
             'seating': 0,
           };
-          notifications =
-              List<Map<String, dynamic>>.from(notificationsResponse);
           isLoading = false;
         });
       }
+
+      // Load notifications separately to ensure they're properly refreshed
+      await _loadNotifications();
     } catch (error) {
       developer.log('Error loading data: $error');
       if (mounted) {
@@ -228,15 +231,24 @@ class _SuperintendentDashboardPageState
   }
 
   Future<void> _loadNotifications() async {
+    if (!mounted) return;
+
+    setState(() => isLoading = true);
     try {
       final response = await Supabase.instance.client
           .from('notifications')
           .select()
           .order('created_at', ascending: false);
 
+      developer.log('Notifications loaded: ${response.length}');
+      if (response.isNotEmpty) {
+        developer.log('First notification: ${response.first}');
+      }
+
       if (mounted) {
         setState(() {
           notifications = List<Map<String, dynamic>>.from(response);
+          isLoading = false;
         });
       }
     } catch (error) {
@@ -247,6 +259,7 @@ class _SuperintendentDashboardPageState
             backgroundColor: Colors.red,
           ),
         );
+        setState(() => isLoading = false);
       }
     }
   }
@@ -272,8 +285,8 @@ class _SuperintendentDashboardPageState
         }
       }
 
-      // Reload all data
-      await _loadData();
+      // Reload notifications instead of all data
+      await _loadNotifications();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1031,8 +1044,12 @@ class _SuperintendentDashboardPageState
   }
 
   Widget _buildRecentActivity(bool isSmallScreen) {
-    final pendingNotifications =
-        notifications.where((n) => n['status'] == 'pending').take(5).toList();
+    // Take the 5 most recent notifications regardless of status
+    final recentNotifications = notifications.take(5).toList();
+
+    developer.log(
+        'Building recent activity with ${notifications.length} total notifications');
+    developer.log('Recent notifications count: ${recentNotifications.length}');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1047,9 +1064,19 @@ class _SuperintendentDashboardPageState
                 fontWeight: FontWeight.w600,
               ),
             ),
-            TextButton(
-              onPressed: () => _showNotificationsDialog(),
-              child: const Text('View All'),
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  splashRadius: 24,
+                  onPressed: _loadNotifications,
+                  tooltip: 'Refresh notifications',
+                ),
+                TextButton(
+                  onPressed: () => _showNotificationsDialog(),
+                  child: const Text('View All'),
+                ),
+              ],
             ),
           ],
         ),
@@ -1059,7 +1086,7 @@ class _SuperintendentDashboardPageState
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          child: pendingNotifications.isEmpty
+          child: recentNotifications.isEmpty
               ? Padding(
                   padding: const EdgeInsets.all(24),
                   child: Center(
@@ -1072,7 +1099,7 @@ class _SuperintendentDashboardPageState
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'No pending notifications',
+                          'No notifications',
                           style: GoogleFonts.poppins(
                             color: Colors.grey.shade600,
                           ),
@@ -1084,13 +1111,13 @@ class _SuperintendentDashboardPageState
               : ListView.separated(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  itemCount: pendingNotifications.length,
+                  itemCount: recentNotifications.length,
                   separatorBuilder: (context, index) => Divider(
                     color: Colors.grey.shade200,
                     height: 1,
                   ),
                   itemBuilder: (context, index) {
-                    final notification = pendingNotifications[index];
+                    final notification = recentNotifications[index];
                     return _buildNotificationItem(notification);
                   },
                 ),
@@ -1152,7 +1179,12 @@ class _SuperintendentDashboardPageState
             icon: const Icon(Icons.close, color: Colors.red),
             splashRadius: 24,
             onPressed: () =>
-                _updateNotificationStatus(notification, 'declined'),
+                _updateNotificationStatus(notification, 'rejected'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete, color: Colors.grey),
+            splashRadius: 24,
+            onPressed: () => _showDeleteConfirmation(notification),
           ),
         ],
       ),
@@ -1204,78 +1236,81 @@ class _SuperintendentDashboardPageState
   }
 
   void _showNotificationsDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxWidth: 600,
-            maxHeight: 600,
+    // Refresh notifications before showing dialog
+    _loadNotifications().then((_) {
+      showDialog(
+        context: context,
+        builder: (context) => Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'Notifications',
-                      style: GoogleFonts.poppins(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                      splashRadius: 24,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: notifications.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.notifications_none,
-                                size: 48,
-                                color: Colors.grey.shade400,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'No notifications',
-                                style: GoogleFonts.poppins(
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : ListView.separated(
-                          itemCount: notifications.length,
-                          separatorBuilder: (context, index) => Divider(
-                            color: Colors.grey.shade200,
-                          ),
-                          itemBuilder: (context, index) {
-                            final notification = notifications[index];
-                            return _buildNotificationItem(notification);
-                          },
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: 600,
+              maxHeight: 600,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Notifications',
+                        style: GoogleFonts.poppins(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
                         ),
-                ),
-              ],
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(context),
+                        splashRadius: 24,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: notifications.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.notifications_none,
+                                  size: 48,
+                                  color: Colors.grey.shade400,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No notifications',
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: notifications.length,
+                            separatorBuilder: (context, index) => Divider(
+                              color: Colors.grey.shade200,
+                            ),
+                            itemBuilder: (context, index) {
+                              final notification = notifications[index];
+                              return _buildNotificationItem(notification);
+                            },
+                          ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
+    });
   }
 }
 

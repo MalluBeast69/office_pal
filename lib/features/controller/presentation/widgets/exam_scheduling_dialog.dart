@@ -119,7 +119,7 @@ class _ExamSchedulingDialogState extends ConsumerState<ExamSchedulingDialog> {
           examDate: _selectedDate!,
           session: _selectedSession.name.toUpperCase(),
           time: time,
-          duration: course.examDuration,
+          duration: course.examDuration ?? 180,
         );
       }).toList();
 

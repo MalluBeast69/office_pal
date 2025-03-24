@@ -546,9 +546,11 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
             ),
           ),
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(280),
-          child: Padding(
+      ),
+      body: Column(
+        children: [
+          // Filter and session selection section (moved from AppBar bottom)
+          Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
               children: [
@@ -705,21 +707,14 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
               ],
             ),
           ),
-        ),
-      ),
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              if (_selectedSession == null)
-                const Expanded(
-                  child: Center(
+
+          // Main content area
+          Expanded(
+            child: _selectedSession == null
+                ? const Center(
                     child: Text('Please select a session to continue'),
-                  ),
-                )
-              else
-                Expanded(
-                  child: SingleChildScrollView(
+                  )
+                : SingleChildScrollView(
                     child: GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
@@ -830,8 +825,6 @@ class _SelectHallsPageState extends ConsumerState<SelectHallsPage> {
                       },
                     ),
                   ),
-                ),
-            ],
           ),
         ],
       ),

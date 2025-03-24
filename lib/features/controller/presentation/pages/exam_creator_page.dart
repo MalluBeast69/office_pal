@@ -71,20 +71,33 @@ class ExamRowsNotifier extends StateNotifier<List<ExamRow>> {
     final month = DateTime.now().month.toString().padLeft(2, '0');
     final examId = 'EX$year$month$random';
 
+    print('DEBUG: Generating examId: $examId');
+
     // Check if ID already exists in current rows
-    if (state.any((row) => row.examId == examId)) {
+    final isDuplicate = state.any((row) => row.examId == examId);
+    if (isDuplicate) {
+      print('DEBUG: Duplicate examId found: $examId, generating new one');
       // If duplicate, recursively try again
       return _generateUniqueExamId();
     }
 
+    print('DEBUG: Generated unique examId: $examId');
     return examId;
   }
 
+  // Public method to generate unique exam ID
+  String generateExamId() {
+    return _generateUniqueExamId();
+  }
+
   void addRow() {
+    final uniqueExamId = generateExamId();
+    print('DEBUG: Adding new row with generated examId: $uniqueExamId');
+
     state = [
       ...state,
       ExamRow(
-        examId: _generateUniqueExamId(),
+        examId: uniqueExamId,
         courseId: '',
         examDate: DateTime.now(),
         time: '09:00',
@@ -93,6 +106,8 @@ class ExamRowsNotifier extends StateNotifier<List<ExamRow>> {
         isSelected: false,
       ),
     ];
+
+    print('DEBUG: Row added successfully with examId: $uniqueExamId');
   }
 
   void updateRow(int index, ExamRow row) {
@@ -112,13 +127,18 @@ class ExamRowsNotifier extends StateNotifier<List<ExamRow>> {
 
   void duplicateRow(int index) {
     final row = state[index];
+    final uniqueExamId = generateExamId();
+    print('DEBUG: Duplicating row index $index with new examId: $uniqueExamId');
+
     state = [
       ...state,
       row.copyWith(
-        examId: _generateUniqueExamId(),
+        examId: uniqueExamId,
         isSelected: false,
       ),
     ];
+
+    print('DEBUG: Row duplicated successfully with new examId: $uniqueExamId');
   }
 
   void deleteAll() {
@@ -185,14 +205,17 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
                   );
             } else {
               // Add new rows for additional courses
+              print('DEBUG: Adding new row for course: $courseId');
+              final uniqueExamId =
+                  ref.read(examRowsProvider.notifier).generateExamId();
+              print('DEBUG: Generated unique exam ID: $uniqueExamId');
+
               ref.read(examRowsProvider.notifier).addRow();
               final newRowIndex = ref.read(examRowsProvider).length - 1;
               ref.read(examRowsProvider.notifier).updateRow(
                     newRowIndex,
                     ExamRow(
-                      examId: ref
-                          .read(examRowsProvider.notifier)
-                          ._generateUniqueExamId(),
+                      examId: uniqueExamId,
                       courseId: courseId,
                       examDate: currentRow.examDate,
                       time: currentRow.time,
@@ -200,6 +223,8 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
                       duration: currentRow.duration,
                     ),
                   );
+              print(
+                  'DEBUG: Added new row with examId: $uniqueExamId and courseId: $courseId');
             }
           }
         },
@@ -214,10 +239,35 @@ class _ExamCreatorPageState extends ConsumerState<ExamCreatorPage> {
     bool hasErrors = false;
     List<String> errorMessages = [];
 
+    // First check for duplicate exam IDs
+    final examIds = <String>{};
+    final duplicateExamIds = <String>{};
+
+    for (var row in rows) {
+      if (examIds.contains(row.examId)) {
+        duplicateExamIds.add(row.examId);
+      } else {
+        examIds.add(row.examId);
+      }
+    }
+
+    if (duplicateExamIds.isNotEmpty) {
+      hasErrors = true;
+      errorMessages
+          .add('Duplicate exam IDs found: ${duplicateExamIds.join(', ')}');
+      print('DEBUG: Found duplicate exam IDs: ${duplicateExamIds.join(', ')}');
+    }
+
     for (var i = 0; i < rows.length; i++) {
       final row = rows[i];
       final errors = <String, String>{};
       final rowErrors = <String>[];
+
+      // Check for duplicate exam ID
+      if (duplicateExamIds.contains(row.examId)) {
+        errors['examId'] = 'Duplicate exam ID';
+        rowErrors.add('Duplicate exam ID: ${row.examId}');
+      }
 
       // Required field validations
       if (row.courseId.isEmpty) {

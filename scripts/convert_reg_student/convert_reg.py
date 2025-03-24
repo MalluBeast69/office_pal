@@ -31,8 +31,8 @@ for index, row in df.iterrows():
         # Create registration entries only for valid course codes
         for course_code in course_codes:
             if course_code in valid_course_codes:
-                # Set is_regular to "true" with 1% probability, "false" otherwise
-                is_regular = "true" if random.random() < 0.01 else "false"
+                # Set is_regular to "false" with 1% probability, "true" otherwise
+                is_regular = "false" if random.random() < 0.01 else "true"
                 # Append the entry to the registration list
                 registration.append([student_reg_no, course_code, now, now, is_regular])
 

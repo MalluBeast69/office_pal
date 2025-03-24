@@ -525,12 +525,40 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
           final columns = _splitCsvRow(row);
           developer.log('Parsed row: $columns');
 
-          if (columns.length >= 3) {
+          if (columns.length >= 5) {  // We need at least 5 columns, not 3
+            // Get raw original value from column 4 (index is 0-based, so use 4)
+            final rawValue = columns[4].trim();
+            
+            // Ensure properly handled as boolean
+            bool isRegularValue;
+            
+            // Log raw data for debugging
+            developer.log('Raw is_regular value from column 4: "$rawValue"');
+            
+            // Very explicit check for string values
+            if (rawValue.toLowerCase() == 'true') {
+              isRegularValue = true;
+              developer.log('Found TRUE string - setting to true');
+            } else if (rawValue.toUpperCase() == 'TRUE') {
+              isRegularValue = true;
+              developer.log('Found TRUE string (uppercase) - setting to true');
+            } else if (rawValue == "true") {
+              isRegularValue = true;
+              developer.log('Found exact match "true" - setting to true');
+            } else {
+              isRegularValue = false;
+              developer.log('No match for true value - setting to false');
+            }
+            
             registrations.add({
               'student_reg_no': columns[0].trim(),
               'course_code': columns[1].trim(),
-              'is_reguler': columns[2].trim().toLowerCase() == 'true',
+              'is_reguler': isRegularValue,
             });
+            
+            developer.log('Added registration with is_reguler=${isRegularValue} (${isRegularValue.runtimeType})');
+          } else {
+            developer.log('Row has insufficient columns: ${columns.length}. Expected at least 5 columns.');
           }
         }
       } else {
@@ -548,13 +576,40 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
 
         // Parse data rows
         for (var row in sheet.rows.skip(1)) {
-          if (row.any((cell) => cell?.value != null)) {
+          if (row.any((cell) => cell?.value != null) && row.length >= 5) {
+            // Get raw original value from column 4 (index is 0-based, so use 4)
+            final rawValue = row[4]?.value.toString().trim() ?? '';
+            
+            // Ensure properly handled as boolean
+            bool isRegularValue;
+            
+            // Log raw data for debugging
+            developer.log('Raw Excel is_regular value from column 4: "$rawValue"');
+            
+            // Very explicit check for string values
+            if (rawValue.toLowerCase() == 'true') {
+              isRegularValue = true;
+              developer.log('Found TRUE string - setting to true');
+            } else if (rawValue.toUpperCase() == 'TRUE') {
+              isRegularValue = true;
+              developer.log('Found TRUE string (uppercase) - setting to true');
+            } else if (rawValue == "true") {
+              isRegularValue = true;
+              developer.log('Found exact match "true" - setting to true');
+            } else {
+              isRegularValue = false;
+              developer.log('No match for true value - setting to false');
+            }
+            
             registrations.add({
               'student_reg_no': row[0]?.value.toString().trim() ?? '',
               'course_code': row[1]?.value.toString().trim() ?? '',
-              'is_reguler':
-                  row[2]?.value.toString().trim().toLowerCase() == 'true',
+              'is_reguler': isRegularValue,
             });
+            
+            developer.log('Added Excel registration with is_reguler=${isRegularValue} (${isRegularValue.runtimeType})');
+          } else if (row.length < 5) {
+            developer.log('Excel row has insufficient columns: ${row.length}. Expected at least 5 columns.');
           }
         }
       }
@@ -621,7 +676,8 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
   }
 
   bool _validateRegistrationHeaders(List<String> headers) {
-    final requiredHeaders = ['student_reg_no', 'course_code', 'is_regular'];
+    // Now account for all 5 columns including timestamps
+    final requiredHeaders = ['student_reg_no', 'course_code', 'created_at', 'updated_at', 'is_regular'];
 
     // Clean headers by removing quotes and whitespace
     final cleanedHeaders = headers.map((h) {
@@ -630,7 +686,9 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
           .toLowerCase()
           .replaceAll('"', '')
           .replaceAll("'", '')
-          .replaceAll('is_reguler', 'is_regular'); // Handle both spellings
+          .replaceAll('is_reguler', 'is_regular') // Handle both spellings
+          .replaceAll('\uFEFF', '')  // Remove Unicode BOM
+          .replaceAll('ï»¿', '');    // Remove BOM character
       developer.log('Original header: "$h" -> Cleaned header: "$cleaned"');
       return cleaned;
     }).toList();
@@ -645,11 +703,12 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
       return false;
     }
 
-    // Check each required header
-    for (final required in requiredHeaders) {
+    // Ensure the critical headers are present (student_reg_no, course_code, is_regular)
+    final criticalHeaders = ['student_reg_no', 'course_code', 'is_regular'];
+    for (final required in criticalHeaders) {
       final found = cleanedHeaders.contains(required);
       developer
-          .log('Checking for "$required": ${found ? "Found" : "Not found"}');
+          .log('Checking for critical header "$required": ${found ? "Found" : "Not found"}');
       if (!found) return false;
     }
 
@@ -759,6 +818,12 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
     if (registrations.isEmpty) {
       throw Exception('No valid registration records found in the file');
     }
+    
+    // Debug log all registrations as they come in
+    developer.log('Raw registrations to import:');
+    for (var reg in registrations) {
+      developer.log('  ${reg['student_reg_no']}, ${reg['course_code']}, isRegular=${reg['is_reguler']} (${reg['is_reguler'].runtimeType})');
+    }
 
     // Get valid student IDs
     final studentsResponse =
@@ -796,8 +861,9 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
         final studentId =
             registration['student_reg_no'].toString().toUpperCase();
         final courseCode = registration['course_code'].toString().trim();
+        final isRegular = registration['is_reguler']; // Keep as is, already correctly parsed
 
-        developer.log('Validating row $rowNumber - Course: "$courseCode"');
+        developer.log('Validating row $rowNumber - Course: "$courseCode", Is Regular: $isRegular (${isRegular.runtimeType})');
 
         // Validate student ID
         if (!validStudentIds.contains(studentId)) {
@@ -843,7 +909,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
         validRegistrations.add({
           'student_reg_no': studentId,
           'course_code': correctCaseCode,
-          'is_reguler': registration['is_reguler'],
+          'is_reguler': isRegular,
           'has_error': false
         });
       } catch (e) {
@@ -852,7 +918,14 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
       }
     }
 
-    // Show preview dialog
+    // Show preview dialog with debugging information
+    developer.log('Preview registrations:');
+    for (var reg in validRegistrations) {
+      if (!reg['has_error']) {
+        developer.log('  ${reg['student_reg_no']}, ${reg['course_code']}, isRegular=${reg['is_reguler']} (${reg['is_reguler'].runtimeType})');
+      }
+    }
+    
     final shouldImport = await showDialog<bool>(
       context: context,
       builder: (context) => PreviewDialog(
@@ -867,8 +940,26 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
           validRegistrations.where((r) => !r['has_error']).map((r) {
         final registration = Map<String, dynamic>.from(r);
         registration.remove('has_error');
+        
+        // Ensure is_reguler is boolean
+        final isRegular = registration['is_reguler'];
+        if (isRegular is! bool) {
+          developer.log('WARNING: is_reguler is not boolean at insertion: $isRegular (${isRegular.runtimeType})');
+          if (isRegular.toString().toLowerCase() == 'true') {
+            registration['is_reguler'] = true;
+          } else {
+            registration['is_reguler'] = false;
+          }
+        }
+        
         return registration;
       }).toList();
+
+      // Log what we're actually inserting to the database
+      developer.log('Inserting registrations:');
+      for (var reg in registrationsToImport) {
+        developer.log('FINAL INSERT: ${reg['student_reg_no']}, ${reg['course_code']}, isRegular=${reg['is_reguler']} (${reg['is_reguler'].runtimeType})');
+      }
 
       await Supabase.instance.client
           .from('registered_students')

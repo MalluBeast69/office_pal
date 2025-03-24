@@ -254,9 +254,17 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
       }
     } catch (error) {
       if (mounted) {
+        String errorMessage = 'Error deleting exam: $error';
+
+        // Check if it's a foreign key constraint with seating_arr
+        if (error.toString().contains('seating_arr_exam_id_fkey')) {
+          errorMessage =
+              'This exam has an active seating arrangement. Please delete the seating arrangement first before deleting this exam.';
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error deleting exam: $error'),
+            content: Text(errorMessage),
             backgroundColor: Colors.red,
           ),
         );
@@ -1444,11 +1452,6 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
               tooltip: 'Delete Selected Exams',
             ),
           IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: _showManualGenerationDialog,
-            tooltip: 'Add Exam',
-          ),
-          IconButton(
             icon: const Icon(Icons.upload_file),
             tooltip: 'Import Excel',
             onPressed: _importFromExcel,
@@ -1612,7 +1615,9 @@ class _ExamManagementPageState extends ConsumerState<ExamManagementPage> {
                           columnSpacing: 28.0,
                           horizontalMargin: 20.0,
                           headingRowColor: WidgetStateProperty.all(
-                            Theme.of(context).colorScheme.surfaceContainerHighest,
+                            Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest,
                           ),
                           columns: const [
                             DataColumn(label: Text('Exam ID')),

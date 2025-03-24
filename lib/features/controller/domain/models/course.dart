@@ -5,7 +5,7 @@ class Course {
   final int credit;
   final String courseType;
   final int semester;
-  final int examDuration;
+  final int? examDuration;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -16,7 +16,7 @@ class Course {
     required this.credit,
     required this.courseType,
     required this.semester,
-    required this.examDuration,
+    this.examDuration,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -31,7 +31,8 @@ class Course {
         credit: json['credit'] as int,
         courseType: json['course_type'] as String,
         semester: json['semester'] as int,
-        examDuration: json['exam_duration'] as int,
+        examDuration:
+            json['exam_duration'] != null ? json['exam_duration'] as int : null,
         createdAt: DateTime.parse(json['created_at'] as String),
         updatedAt: DateTime.parse(json['updated_at'] as String),
       );

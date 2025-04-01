@@ -9,6 +9,9 @@ import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:office_pal/features/controller/presentation/pages/exam_management_page.dart';
 import 'package:office_pal/core/utils/screen_utils.dart';
+import 'package:loading_animation_widget/loading_animation_widget.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:google_fonts/google_fonts.dart';
 
 class ExamDateDialog extends StatelessWidget {
   final DateTime selectedDate;
@@ -113,12 +116,32 @@ class ControllerDashboardPage extends ConsumerStatefulWidget {
 }
 
 class _ControllerDashboardPageState
-    extends ConsumerState<ControllerDashboardPage> {
+    extends ConsumerState<ControllerDashboardPage>
+    with TickerProviderStateMixin {
   CalendarFormat _calendarFormat = CalendarFormat.month;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
   bool _showCalendar = true;
   String _currentSection = 'dashboard';
+  bool isLoading = false;
+
+  // Animation controllers
+  late AnimationController _fadeInController;
+  late AnimationController _slideController;
+
+  // Animations
+  late Animation<double> _fadeInAnimation;
+  late Animation<Offset> _slideAnimation;
+
+  // Hover states for menu items
+  Map<String, bool> _isHovering = {
+    'dashboard': false,
+    'create_exams': false,
+    'manage_exams': false,
+    'import_schedule': false,
+    'calendar': false,
+    'logout': false,
+  };
 
   @override
   void initState() {
@@ -128,6 +151,43 @@ class _ControllerDashboardPageState
         showScreenSizeWarning(context);
       }
     });
+
+    // Initialize animations
+    _fadeInController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+
+    _fadeInAnimation = CurvedAnimation(
+      parent: _fadeInController,
+      curve: Curves.easeIn,
+    );
+
+    _slideController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.1),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _slideController,
+        curve: Curves.easeOutCubic,
+      ),
+    );
+
+    // Start animations
+    _fadeInController.forward();
+    _slideController.forward();
+  }
+
+  @override
+  void dispose() {
+    _fadeInController.dispose();
+    _slideController.dispose();
+    super.dispose();
   }
 
   Future<void> _signOut(BuildContext context) async {
@@ -271,571 +331,737 @@ class _ControllerDashboardPageState
     );
   }
 
+  Widget _buildLoadingScreen() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.blue.shade100,
+            Colors.blue.shade50,
+          ],
+        ),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            LoadingAnimationWidget.staggeredDotsWave(
+              color: Colors.blue,
+              size: 50,
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Office Pal',
+              style: GoogleFonts.poppins(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Loading Dashboard...',
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                color: Colors.blue.shade700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildSidebar() {
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 3,
+      color: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topRight: Radius.circular(20),
+          bottomRight: Radius.circular(20),
+        ),
+      ),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 280,
+        height: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.all(10),
+                    child: Icon(
+                      Icons.admin_panel_settings,
+                      size: 32,
+                      color: Colors.blue.shade700,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Text(
+                    'Office Pal',
+                    style: GoogleFonts.poppins(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 40),
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  _buildSidebarItem('dashboard', 'Dashboard', Icons.dashboard),
+                  _buildSidebarItem(
+                      'create_exams', 'Create Exams', Icons.add_circle_outline),
+                  _buildSidebarItem(
+                      'manage_exams', 'Manage Exams', Icons.edit_calendar),
+                  _buildSidebarItem(
+                      'import_schedule', 'Import Schedule', Icons.upload_file),
+                  _buildSidebarItem(
+                      'calendar', 'Calendar View', Icons.calendar_month),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Divider(color: Colors.grey.shade200),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _buildLogoutButton(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSidebarItem(String id, String title, IconData icon) {
+    final isSelected = _currentSection == id;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovering[id] = true),
+        onExit: (_) => setState(() => _isHovering[id] = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Colors.blue.shade50
+                : _isHovering[id] ?? false
+                    ? Colors.grey.shade100
+                    : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: ListTile(
+            leading: Icon(
+              icon,
+              color: isSelected
+                  ? Colors.blue.shade700
+                  : _isHovering[id] ?? false
+                      ? Colors.blue.shade700
+                      : Colors.grey.shade600,
+            ),
+            title: Text(
+              title,
+              style: GoogleFonts.poppins(
+                color: isSelected
+                    ? Colors.blue.shade700
+                    : _isHovering[id] ?? false
+                        ? Colors.blue.shade700
+                        : Colors.grey.shade800,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+            onTap: () {
+              if (id == 'dashboard') {
+                setState(() => _currentSection = id);
+              } else {
+                _navigateToSection(id);
+              }
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLogoutButton() {
+    return Card(
+      elevation: 0,
+      color: Colors.red.shade50,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: ListTile(
+        onTap: () => _signOut(context),
+        leading: Icon(
+          Icons.logout,
+          color: Colors.red.shade700,
+        ),
+        title: Text(
+          'Logout',
+          style: GoogleFonts.poppins(
+            color: Colors.red.shade700,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _navigateToSection(String id) {
+    switch (id) {
+      case 'create_exams':
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const ExamCreatorPage()),
+        );
+        break;
+      case 'manage_exams':
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const ExamManagementPage()),
+        );
+        break;
+      case 'import_schedule':
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const ExamManagementPage()),
+        );
+        break;
+      case 'calendar':
+        setState(() => _showCalendar = !_showCalendar);
+        break;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final examsAsync = ref.watch(examsProvider);
+    final holidaysAsync = ref.watch(holidaysProvider(_focusedDay.year));
+    final screenSize = MediaQuery.of(context).size;
+    final isSmallScreen = screenSize.width < 600;
+    final isWeb = kIsWeb;
+
+    return Scaffold(
+      drawer: isSmallScreen
+          ? Drawer(
+              child: _buildSidebar(),
+            )
+          : null,
+      body: isLoading
+          ? _buildLoadingScreen()
+          : Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.blue.shade50,
+                    Colors.white,
+                  ],
+                ),
+              ),
+              child: SafeArea(
+                child: Row(
+                  children: [
+                    if (!isSmallScreen) _buildSidebar(),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: () async {
+                          ref.refresh(examsProvider);
+                          ref.refresh(holidaysProvider(_focusedDay.year));
+                        },
+                        child: CustomScrollView(
+                          slivers: [
+                            SliverAppBar(
+                              pinned: true,
+                              floating: true,
+                              automaticallyImplyLeading: isSmallScreen,
+                              title: isSmallScreen
+                                  ? Text(
+                                      'Controller Dashboard',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    )
+                                  : null,
+                              backgroundColor: isWeb
+                                  ? Colors.white.withOpacity(0.8)
+                                  : Theme.of(context).scaffoldBackgroundColor,
+                              actions: [
+                                _buildProfileButton(),
+                                const SizedBox(width: 16),
+                              ],
+                              elevation: 0,
+                            ),
+                            SliverFadeTransition(
+                              opacity: _fadeInAnimation,
+                              sliver: SliverToBoxAdapter(
+                                child: SlideTransition(
+                                  position: _slideAnimation,
+                                  child: _buildDashboardContent(
+                                      isSmallScreen, Theme.of(context)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+
+  Widget _buildProfileButton() {
     final user = Supabase.instance.client.auth.currentUser;
     final email = user?.email ?? 'controller@example.com';
     final name =
         email.split('@')[0].split('.').map((s) => s.capitalize()).join(' ');
 
     return Container(
-      width: 280,
-      color: Theme.of(context).colorScheme.primary,
+      margin: const EdgeInsets.only(right: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(30),
+        onTap: () {
+          // Show profile options or logout
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: Colors.blue.shade100,
+                child: Icon(
+                  Icons.person,
+                  size: 20,
+                  color: Colors.blue.shade700,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Controller',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDashboardContent(bool isSmallScreen, ThemeData theme) {
+    return Padding(
+      padding: EdgeInsets.all(isSmallScreen ? 16 : 24),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Profile Section
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            color: Theme.of(context).colorScheme.primary,
-            child: Column(
-              children: [
-                CircleAvatar(
-                  radius: 40,
-                  backgroundColor: Colors.white,
-                  child: Text(
-                    name.substring(0, 2).toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Controller',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.white.withOpacity(0.8),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Navigation Section
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(24),
-                  topRight: Radius.circular(24),
-                ),
-              ),
-              child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                children: [
-                  _buildNavItem(
-                    'Dashboard',
-                    Icons.dashboard,
-                    'dashboard',
-                  ),
-                  _buildNavItem(
-                    'Create Exams',
-                    Icons.add_circle_outline,
-                    'create_exams',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const ExamCreatorPage(),
-                      ),
-                    ),
-                  ),
-                  _buildNavItem(
-                    'Manage Exams',
-                    Icons.edit_calendar,
-                    'manage_exams',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const ExamManagementPage(),
-                      ),
-                    ),
-                  ),
-                  _buildNavItem(
-                    'Import Schedule',
-                    Icons.upload_file,
-                    'import_schedule',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const ExamManagementPage(),
-                      ),
-                    ),
-                  ),
-                  _buildNavItem(
-                    'Calendar View',
-                    Icons.calendar_month,
-                    'calendar',
-                    onTap: () {
-                      setState(() {
-                        _showCalendar = !_showCalendar;
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Logout Button
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Theme.of(context).colorScheme.surface,
-            child: Card(
-              elevation: 0,
-              color:
-                  Theme.of(context).colorScheme.errorContainer.withOpacity(0.1),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(
-                  color: Theme.of(context).colorScheme.error.withOpacity(0.2),
-                  width: 1,
-                ),
-              ),
-              child: InkWell(
-                onTap: () => _signOut(context),
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.logout,
-                        color: Theme.of(context).colorScheme.error,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Logout',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
+          _buildWelcomeSection(theme),
+          const SizedBox(height: 32),
+          _buildExamCalendar(isSmallScreen),
+          const SizedBox(height: 32),
+          _buildUpcomingExams(isSmallScreen),
+          const SizedBox(height: 24),
         ],
       ),
     );
   }
 
-  Widget _buildNavItem(String title, IconData icon, String section,
-      {VoidCallback? onTap}) {
-    final isSelected = _currentSection == section;
-    final color = isSelected
-        ? Theme.of(context).colorScheme.primary
-        : Theme.of(context).colorScheme.onSurface.withOpacity(0.75);
-
-    return ListTile(
-      onTap: onTap ??
-          () {
-            setState(() => _currentSection = section);
-          },
-      selected: isSelected,
+  Widget _buildWelcomeSection(ThemeData theme) {
+    return Card(
+      elevation: 3,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
       ),
-      leading: Icon(icon, color: color),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: color,
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+      color: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              theme.colorScheme.primary,
+              theme.colorScheme.primary.withOpacity(0.8),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.blue.withOpacity(0.1),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
         ),
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    print('Building ControllerDashboardPage');
-    final examsAsync = ref.watch(examsProvider);
-    final holidaysAsync = ref.watch(holidaysProvider(_focusedDay.year));
-    final screenSize = MediaQuery.of(context).size;
-    final isSmallScreen = screenSize.width < 600;
-
-    return Scaffold(
-      appBar: isSmallScreen
-          ? AppBar(
-              title: const Text('Controller Dashboard'),
-              elevation: 0,
-              backgroundColor: Colors.transparent,
-              foregroundColor: Theme.of(context).colorScheme.onSurface,
-            )
-          : null,
-      drawer: isSmallScreen ? Drawer(child: _buildSidebar()) : null,
-      body: Row(
-        children: [
-          if (!isSmallScreen) _buildSidebar(),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.all(isSmallScreen ? 16.0 : 24.0),
+        child: Row(
+          children: [
+            Expanded(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Welcome Section
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Theme.of(context).colorScheme.primary,
-                          Theme.of(context).colorScheme.primaryContainer,
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(16),
+                  Text(
+                    'Welcome back, Controller',
+                    style: GoogleFonts.poppins(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Welcome, Controller',
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Manage your exam schedules and arrangements',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.white.withOpacity(0.8),
-                          ),
-                        ),
-                      ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Manage your examination schedules and arrangements',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      color: Colors.white.withOpacity(0.8),
                     ),
                   ),
                   const SizedBox(height: 24),
-                  // Upcoming Events and Calendar Section
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Calendar Section
-                      if (_showCalendar)
-                        Expanded(
-                          flex: 2,
-                          child: Card(
-                            elevation: 2,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: examsAsync.when(
-                                data: (exams) => holidaysAsync.when(
-                                  data: (holidays) => Column(
-                                    children: [
-                                      TableCalendar(
-                                        firstDay: DateTime.now().subtract(
-                                            const Duration(days: 365)),
-                                        lastDay: DateTime.now()
-                                            .add(const Duration(days: 365)),
-                                        focusedDay: _focusedDay,
-                                        selectedDayPredicate: (day) =>
-                                            isSameDay(_selectedDay, day),
-                                        calendarFormat: _calendarFormat,
-                                        onFormatChanged: (format) => setState(
-                                            () => _calendarFormat = format),
-                                        eventLoader: (day) => _getEventsForDay(
-                                            day, exams, holidays),
-                                        calendarStyle: CalendarStyle(
-                                          markerSize: 8,
-                                          markerDecoration: BoxDecoration(
-                                            color: Colors.blue.shade700,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          markersMaxCount: 3,
-                                          markerMargin:
-                                              const EdgeInsets.symmetric(
-                                                  horizontal: 0.5),
-                                          holidayTextStyle: const TextStyle(
-                                              color: Colors.red),
-                                          holidayDecoration:
-                                              const BoxDecoration(),
-                                        ),
-                                        holidayPredicate: (day) => holidays.any(
-                                            (holiday) =>
-                                                holiday.date.year == day.year &&
-                                                holiday.date.month ==
-                                                    day.month &&
-                                                holiday.date.day == day.day),
-                                        onDaySelected:
-                                            (selectedDay, focusedDay) {
-                                          setState(() {
-                                            _selectedDay = selectedDay;
-                                            _focusedDay = focusedDay;
-                                          });
-                                          _showEventDialog(context, selectedDay,
-                                              exams, holidays);
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                  loading: () => const SizedBox(
-                                    height: 300,
-                                    child: Center(
-                                        child: CircularProgressIndicator()),
-                                  ),
-                                  error: (error, stack) => Center(
-                                    child:
-                                        Text('Error loading holidays: $error'),
-                                  ),
-                                ),
-                                loading: () => const SizedBox(
-                                  height: 300,
-                                  child: Center(
-                                      child: CircularProgressIndicator()),
-                                ),
-                                error: (error, stack) => Center(
-                                  child: Text('Error loading exams: $error'),
-                                ),
-                              ),
-                            ),
+                      ElevatedButton.icon(
+                        onPressed: () => _navigateToSection('create_exams'),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Create Exam'),
+                        style: ElevatedButton.styleFrom(
+                          foregroundColor: Colors.blue.shade700,
+                          backgroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 16,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
                           ),
                         ),
-                      if (_showCalendar) const SizedBox(width: 24),
-                      // Upcoming Events Section
-                      Expanded(
-                        child: Card(
-                          elevation: 2,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                      ),
+                      const SizedBox(width: 16),
+                      OutlinedButton.icon(
+                        onPressed: () => _navigateToSection('manage_exams'),
+                        icon: const Icon(Icons.edit_calendar),
+                        label: const Text('Manage Exams'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 16,
                           ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.event,
-                                      color:
-                                          Theme.of(context).colorScheme.primary,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    const Text(
-                                      'Upcoming Exams',
-                                      style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                examsAsync.when(
-                                  data: (exams) {
-                                    final now = DateTime.now();
-                                    final upcomingExams = exams.where((exam) {
-                                      final examDate =
-                                          DateTime.parse(exam['exam_date']);
-                                      return examDate.isAfter(now);
-                                    }).toList()
-                                      ..sort((a, b) => DateTime.parse(
-                                              a['exam_date'])
-                                          .compareTo(
-                                              DateTime.parse(b['exam_date'])));
-
-                                    if (upcomingExams.isEmpty) {
-                                      return const Center(
-                                        child: Text('No upcoming exams'),
-                                      );
-                                    }
-
-                                    return Column(
-                                      children:
-                                          upcomingExams.take(5).map((exam) {
-                                        final course = exam['course']
-                                            as Map<String, dynamic>;
-                                        final examDate =
-                                            DateTime.parse(exam['exam_date']);
-                                        final daysUntil =
-                                            examDate.difference(now).inDays;
-
-                                        Color statusColor;
-                                        if (daysUntil <= 3) {
-                                          statusColor = Colors.red;
-                                        } else if (daysUntil <= 7) {
-                                          statusColor = Colors.orange;
-                                        } else {
-                                          statusColor = Colors.blue;
-                                        }
-
-                                        return Container(
-                                          margin:
-                                              const EdgeInsets.only(bottom: 12),
-                                          padding: const EdgeInsets.all(16),
-                                          decoration: BoxDecoration(
-                                            color: statusColor.withOpacity(0.1),
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                            border: Border.all(
-                                              color:
-                                                  statusColor.withOpacity(0.2),
-                                            ),
-                                          ),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  Icon(Icons.school,
-                                                      color: statusColor,
-                                                      size: 20),
-                                                  const SizedBox(width: 8),
-                                                  Expanded(
-                                                    child: Text(
-                                                      '${course['course_code']} - ${course['course_name']}',
-                                                      style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 8),
-                                              Row(
-                                                children: [
-                                                  Icon(Icons.calendar_today,
-                                                      color: statusColor
-                                                          .withOpacity(0.8),
-                                                      size: 16),
-                                                  const SizedBox(width: 8),
-                                                  Text(
-                                                    DateFormat('MMM d, y')
-                                                        .format(examDate),
-                                                    style: TextStyle(
-                                                      color: statusColor,
-                                                      fontWeight:
-                                                          FontWeight.w500,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 16),
-                                                  Icon(Icons.access_time,
-                                                      color: statusColor
-                                                          .withOpacity(0.8),
-                                                      size: 16),
-                                                  const SizedBox(width: 8),
-                                                  Text(
-                                                    '${exam['session']} - ${exam['time']}',
-                                                    style: TextStyle(
-                                                      color: statusColor,
-                                                      fontWeight:
-                                                          FontWeight.w500,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                daysUntil == 0
-                                                    ? 'Today'
-                                                    : daysUntil == 1
-                                                        ? 'Tomorrow'
-                                                        : '$daysUntil days remaining',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: statusColor,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      }).toList(),
-                                    );
-                                  },
-                                  loading: () => const Center(
-                                    child: CircularProgressIndicator(),
-                                  ),
-                                  error: (error, _) => Center(
-                                    child: Text('Error loading exams: $error'),
-                                  ),
-                                ),
-                              ],
-                            ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
-                  // Quick Actions Grid
-                  if (!_showCalendar)
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final isDesktop = constraints.maxWidth > 600;
-                        return GridView.count(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          crossAxisCount: isDesktop ? 3 : 2,
-                          mainAxisSpacing: 16,
-                          crossAxisSpacing: 16,
-                          childAspectRatio: isDesktop ? 1.5 : 1.2,
+                ],
+              ),
+            ),
+            if (MediaQuery.of(context).size.width >= 900)
+              Container(
+                width: 240,
+                height: 180,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Center(
+                  child: Icon(
+                    Icons.school,
+                    size: 80,
+                    color: Colors.white.withOpacity(0.6),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExamCalendar(bool isSmallScreen) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Exam Calendar',
+          style: GoogleFonts.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          elevation: 3,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Consumer(
+              builder: (context, ref, child) {
+                final examsAsync = ref.watch(examsProvider);
+                final holidaysAsync =
+                    ref.watch(holidaysProvider(_focusedDay.year));
+
+                return examsAsync.when(
+                  data: (exams) => holidaysAsync.when(
+                    data: (holidays) => TableCalendar(
+                      firstDay:
+                          DateTime.now().subtract(const Duration(days: 365)),
+                      lastDay: DateTime.now().add(const Duration(days: 365)),
+                      focusedDay: _focusedDay,
+                      selectedDayPredicate: (day) =>
+                          isSameDay(_selectedDay, day),
+                      calendarFormat: _calendarFormat,
+                      onFormatChanged: (format) =>
+                          setState(() => _calendarFormat = format),
+                      eventLoader: (day) =>
+                          _getEventsForDay(day, exams, holidays),
+                      calendarStyle: CalendarStyle(
+                        markerSize: 8,
+                        markerDecoration: BoxDecoration(
+                          color: Colors.blue.shade700,
+                          shape: BoxShape.circle,
+                        ),
+                        markersMaxCount: 3,
+                        markerMargin:
+                            const EdgeInsets.symmetric(horizontal: 0.5),
+                        holidayTextStyle: const TextStyle(color: Colors.red),
+                        holidayDecoration: const BoxDecoration(),
+                        selectedDecoration: BoxDecoration(
+                          color: Colors.blue.shade700,
+                          shape: BoxShape.circle,
+                        ),
+                        todayDecoration: BoxDecoration(
+                          color: Colors.blue.shade100,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      onDaySelected: (selectedDay, focusedDay) {
+                        setState(() {
+                          _selectedDay = selectedDay;
+                          _focusedDay = focusedDay;
+                        });
+                        _showEventDialog(context, selectedDay, exams, holidays);
+                      },
+                      headerStyle: HeaderStyle(
+                        titleTextStyle: GoogleFonts.poppins(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        formatButtonTextStyle: GoogleFonts.poppins(),
+                        formatButtonDecoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (error, _) =>
+                        Center(child: Text('Error loading holidays: $error')),
+                  ),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (error, _) =>
+                      Center(child: Text('Error loading exams: $error')),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUpcomingExams(bool isSmallScreen) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Upcoming Exams',
+          style: GoogleFonts.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          elevation: 3,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Consumer(
+              builder: (context, ref, child) {
+                final examsAsync = ref.watch(examsProvider);
+
+                return examsAsync.when(
+                  data: (exams) {
+                    final now = DateTime.now();
+                    final upcomingExams = exams.where((exam) {
+                      final examDate = DateTime.parse(exam['exam_date']);
+                      return examDate.isAfter(now);
+                    }).toList()
+                      ..sort((a, b) => DateTime.parse(a['exam_date'])
+                          .compareTo(DateTime.parse(b['exam_date'])));
+
+                    if (upcomingExams.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            _buildDashboardCard(
-                              context,
-                              title: 'Create Exams',
-                              icon: Icons.add_circle_outline,
-                              color: Colors.blue,
-                              onTap: () => Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) => const ExamCreatorPage(),
-                                ),
-                              ),
+                            Icon(
+                              Icons.event_available,
+                              size: 48,
+                              color: Colors.grey.shade400,
                             ),
-                            _buildDashboardCard(
-                              context,
-                              title: 'Manage Exams',
-                              icon: Icons.edit_calendar,
-                              color: Colors.green,
-                              onTap: () => Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      const ExamManagementPage(),
-                                ),
-                              ),
-                            ),
-                            _buildDashboardCard(
-                              context,
-                              title: 'Import Schedule',
-                              icon: Icons.upload_file,
-                              color: Colors.orange,
-                              onTap: () => Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      const ExamManagementPage(),
-                                ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No upcoming exams',
+                              style: GoogleFonts.poppins(
+                                color: Colors.grey.shade600,
+                                fontSize: 16,
                               ),
                             ),
                           ],
+                        ),
+                      );
+                    }
+
+                    return Column(
+                      children: upcomingExams.take(5).map((exam) {
+                        final course = exam['course'] as Map<String, dynamic>;
+                        final examDate = DateTime.parse(exam['exam_date']);
+                        final daysUntil = examDate.difference(now).inDays;
+
+                        Color statusColor;
+                        if (daysUntil <= 3) {
+                          statusColor = Colors.red;
+                        } else if (daysUntil <= 7) {
+                          statusColor = Colors.orange;
+                        } else {
+                          statusColor = Colors.blue;
+                        }
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: statusColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: statusColor.withOpacity(0.2),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.school,
+                                      color: statusColor, size: 20),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      '${course['course_code']} - ${course['course_name']}',
+                                      style: GoogleFonts.poppins(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Icon(Icons.calendar_today,
+                                      color: statusColor.withOpacity(0.8),
+                                      size: 16),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    DateFormat('MMM d, y').format(examDate),
+                                    style: GoogleFonts.poppins(
+                                      color: statusColor,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Icon(Icons.access_time,
+                                      color: statusColor.withOpacity(0.8),
+                                      size: 16),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '${exam['session']} - ${exam['time']}',
+                                    style: GoogleFonts.poppins(
+                                      color: statusColor,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                daysUntil == 0
+                                    ? 'Today'
+                                    : daysUntil == 1
+                                        ? 'Tomorrow'
+                                        : '$daysUntil days remaining',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  color: statusColor,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
                         );
-                      },
-                    ),
-                ],
-              ),
+                      }).toList(),
+                    );
+                  },
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (error, _) =>
+                      Center(child: Text('Error loading exams: $error')),
+                );
+              },
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -843,5 +1069,25 @@ class _ControllerDashboardPageState
 extension StringExtension on String {
   String capitalize() {
     return "${this[0].toUpperCase()}${substring(1)}";
+  }
+}
+
+class SliverFadeTransition extends StatelessWidget {
+  final Animation<double> opacity;
+  final Widget sliver;
+
+  const SliverFadeTransition({
+    Key? key,
+    required this.opacity,
+    required this.sliver,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverAnimatedOpacity(
+      opacity: opacity.value,
+      duration: const Duration(milliseconds: 0),
+      sliver: sliver,
+    );
   }
 }

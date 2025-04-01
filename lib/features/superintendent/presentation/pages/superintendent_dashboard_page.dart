@@ -432,6 +432,11 @@ class _SuperintendentDashboardPageState
     final isWeb = kIsWeb;
 
     return Scaffold(
+      drawer: isSmallScreen
+          ? Drawer(
+              child: _buildSidebar(),
+            )
+          : null,
       body: isLoading
           ? _buildLoadingScreen()
           : Container(

@@ -120,8 +120,10 @@ class _AdminLoginPageState extends ConsumerState<AdminLoginPage>
           ),
         );
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (mounted) {
+        print('ADMIN_LOGIN_PAGE_SIGN_IN_ERROR: $error');
+        print('ADMIN_LOGIN_PAGE_SIGN_IN_STACKTRACE: $stackTrace');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('An unexpected error occurred'),
@@ -160,13 +162,13 @@ class _AdminLoginPageState extends ConsumerState<AdminLoginPage>
           children: [
             // Background
             Container(
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    const Color(0xFF1A2C42),
-                    const Color(0xFF121E2E),
+                    Color(0xFF1A2C42),
+                    Color(0xFF121E2E),
                   ],
                 ),
               ),
@@ -300,9 +302,9 @@ class _AdminLoginPageState extends ConsumerState<AdminLoginPage>
         Expanded(
           flex: 4,
           child: Container(
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: Colors.white,
-              borderRadius: const BorderRadius.only(
+              borderRadius: BorderRadius.only(
                 topLeft: Radius.circular(30),
                 bottomLeft: Radius.circular(30),
               ),
@@ -477,12 +479,12 @@ class _AdminLoginPageState extends ConsumerState<AdminLoginPage>
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             'Administrator Sign In',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
-              color: const Color(0xFF1A2C42),
+              color: Color(0xFF1A2C42),
             ),
           ),
           const SizedBox(height: 8),
@@ -733,7 +735,7 @@ class _AdminLoginPageState extends ConsumerState<AdminLoginPage>
                 ),
               ),
               child: _isLoading
-                  ? SizedBox(
+                  ? const SizedBox(
                       width: 24,
                       height: 24,
                       child: CircularProgressIndicator(
@@ -741,12 +743,12 @@ class _AdminLoginPageState extends ConsumerState<AdminLoginPage>
                         strokeWidth: 2,
                       ),
                     )
-                  : Row(
+                  : const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.shield_outlined, size: 20),
-                        const SizedBox(width: 8),
-                        const Text(
+                        Icon(Icons.shield_outlined, size: 20),
+                        SizedBox(width: 8),
+                        Text(
                           'Secure Sign In',
                           style: TextStyle(
                             fontSize: 16,

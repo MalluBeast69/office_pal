@@ -556,7 +556,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
               'is_reguler': isRegularValue,
             });
             
-            developer.log('Added registration with is_reguler=${isRegularValue} (${isRegularValue.runtimeType})');
+            developer.log('Added registration with is_reguler=$isRegularValue (${isRegularValue.runtimeType})');
           } else {
             developer.log('Row has insufficient columns: ${columns.length}. Expected at least 5 columns.');
           }
@@ -607,7 +607,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
               'is_reguler': isRegularValue,
             });
             
-            developer.log('Added Excel registration with is_reguler=${isRegularValue} (${isRegularValue.runtimeType})');
+            developer.log('Added Excel registration with is_reguler=$isRegularValue (${isRegularValue.runtimeType})');
           } else if (row.length < 5) {
             developer.log('Excel row has insufficient columns: ${row.length}. Expected at least 5 columns.');
           }
@@ -1010,7 +1010,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
     final screenSize = MediaQuery.of(context).size;
     final isSmallScreen = screenSize.width < 600;
     final theme = Theme.of(context);
-    final isWeb = kIsWeb;
+    const isWeb = kIsWeb;
 
     return Scaffold(
       appBar: isSmallScreen
@@ -2016,8 +2016,8 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
                         physics: const AlwaysScrollableScrollPhysics(),
                         child: DataTable(
                           headingRowColor:
-                              MaterialStateProperty.resolveWith<Color>(
-                            (Set<MaterialState> states) => Colors.blue.shade50,
+                              WidgetStateProperty.resolveWith<Color>(
+                            (Set<WidgetState> states) => Colors.blue.shade50,
                           ),
                           columnSpacing: 16,
                           horizontalMargin: 20,
@@ -2093,7 +2093,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
                                 },
                                 cells: [
                                   // Removed the redundant checkbox here
-                                  DataCell(SizedBox.shrink()),
+                                  const DataCell(SizedBox.shrink()),
                                   DataCell(
                                     Text(
                                       studentId,
@@ -2298,14 +2298,14 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
   }
 
   void _showEditDialog(Map<String, dynamic> student) {
-    final _editFormKey = GlobalKey<FormState>();
-    final _regNoController =
+    final editFormKey = GlobalKey<FormState>();
+    final regNoController =
         TextEditingController(text: student['student_reg_no'] as String);
-    final _nameController =
+    final nameController =
         TextEditingController(text: student['student_name'] as String);
-    String _selectedDepartment = student['dept_id'] as String;
-    int _selectedSemester = student['semester'] as int;
-    bool _isLoading = false;
+    String selectedDepartment = student['dept_id'] as String;
+    int selectedSemester = student['semester'] as int;
+    bool isLoading = false;
 
     showDialog(
       context: context,
@@ -2322,23 +2322,23 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
             content: SizedBox(
               width: 400,
               child: Form(
-                key: _editFormKey,
+                key: editFormKey,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TextFormField(
-                      controller: _regNoController,
+                      controller: regNoController,
                       decoration: const InputDecoration(
                         labelText: 'Registration Number',
                         hintText: 'e.g., CSE1801',
                       ),
                       readOnly:
                           true, // Registration number shouldn't be editable
-                      style: TextStyle(color: Colors.grey),
+                      style: const TextStyle(color: Colors.grey),
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
-                      controller: _nameController,
+                      controller: nameController,
                       decoration: const InputDecoration(
                         labelText: 'Student Name',
                         hintText: 'Full name',
@@ -2372,7 +2372,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
                             (snapshot.data as List<dynamic>?) ?? [];
 
                         return DropdownButtonFormField<String>(
-                          value: _selectedDepartment,
+                          value: selectedDepartment,
                           decoration: const InputDecoration(
                             labelText: 'Department',
                           ),
@@ -2384,7 +2384,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
                             );
                           }).toList(),
                           onChanged: (value) {
-                            setState(() => _selectedDepartment = value!);
+                            setState(() => selectedDepartment = value!);
                           },
                           validator: (value) {
                             if (value == null) {
@@ -2397,7 +2397,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<int>(
-                      value: _selectedSemester,
+                      value: selectedSemester,
                       decoration: const InputDecoration(
                         labelText: 'Semester',
                       ),
@@ -2408,7 +2408,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
                         );
                       }).toList(),
                       onChanged: (value) {
-                        setState(() => _selectedSemester = value!);
+                        setState(() => selectedSemester = value!);
                       },
                       validator: (value) {
                         if (value == null) {
@@ -2423,7 +2423,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
             ),
             actions: [
               TextButton(
-                onPressed: _isLoading ? null : () => Navigator.pop(context),
+                onPressed: isLoading ? null : () => Navigator.pop(context),
                 child: Text(
                   'Cancel',
                   style: GoogleFonts.poppins(
@@ -2432,18 +2432,18 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
                 ),
               ),
               FilledButton(
-                onPressed: _isLoading
+                onPressed: isLoading
                     ? null
                     : () async {
-                        if (_editFormKey.currentState!.validate()) {
-                          setState(() => _isLoading = true);
+                        if (editFormKey.currentState!.validate()) {
+                          setState(() => isLoading = true);
                           try {
                             await Supabase.instance.client
                                 .from('student')
                                 .update({
-                              'student_name': _nameController.text.trim(),
-                              'dept_id': _selectedDepartment,
-                              'semester': _selectedSemester,
+                              'student_name': nameController.text.trim(),
+                              'dept_id': selectedDepartment,
+                              'semester': selectedSemester,
                             }).eq('student_reg_no', student['student_reg_no']);
 
                             if (context.mounted) {
@@ -2456,7 +2456,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
                               Navigator.pop(context, true);
                             }
                           } catch (error) {
-                            setState(() => _isLoading = false);
+                            setState(() => isLoading = false);
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
@@ -2469,8 +2469,8 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
                           }
                         }
                       },
-                child: _isLoading
-                    ? SizedBox(
+                child: isLoading
+                    ? const SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(
@@ -2510,7 +2510,7 @@ class _StudentManagementPageState extends ConsumerState<StudentManagementPage>
 
     if (studentsWithCourses > 0) {
       warningMessage +=
-          '\n\nWARNING: ${studentsWithCourses} of these students have courses registered. Deleting them will also remove all their course registrations.';
+          '\n\nWARNING: $studentsWithCourses of these students have courses registered. Deleting them will also remove all their course registrations.';
     }
 
     warningMessage +=

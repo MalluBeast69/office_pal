@@ -15,10 +15,31 @@ void main() async {
   // Load .env file
   await dotenv.load(fileName: ".env");
 
+  // Try to get from --dart-define first (for production/GitHub Pages)
+  String? supabaseUrl = const String.fromEnvironment('SUPABASE_URL');
+  String? supabaseAnonKey = const String.fromEnvironment('SUPABASE_ANON_KEY');
+
+  // If not available from --dart-define (empty string), then use dotenv (for local dev)
+  if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
+    print('DEBUG: Using dotenv for Supabase credentials (local development).');
+    supabaseUrl = dotenv.env['SUPABASE_URL'];
+    supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
+  } else {
+    print('DEBUG: Using String.fromEnvironment for Supabase credentials (production build).');
+  }
+  
+  print('DEBUG: Final SUPABASE_URL: $supabaseUrl');
+  print('DEBUG: Final SUPABASE_ANON_KEY: $supabaseAnonKey');
+
+  if (supabaseUrl == null || supabaseUrl.isEmpty || supabaseAnonKey == null || supabaseAnonKey.isEmpty) {
+    print('ERROR: Supabase URL or Anon Key is null or empty. Ensure secrets are set for GitHub Actions and .env for local dev.');
+    // Potentially handle this error more gracefully, e.g., show an error page.
+    return; // Prevent further execution if keys are missing
+  }
+
   await Supabase.initialize(
-    url: const String.fromEnvironment('SUPABASE_URL'),
-    anonKey:
-        const String.fromEnvironment('SUPABASE_ANON_KEY'),
+    url: supabaseUrl,
+    anonKey: supabaseAnonKey,
   );
 
   runApp(const ProviderScope(child: MyApp()));

@@ -659,7 +659,7 @@ class _HallManagementPageState extends ConsumerState<HallManagementPage>
     final screenSize = MediaQuery.of(context).size;
     final isSmallScreen = screenSize.width < 600;
     final theme = Theme.of(context);
-    final isWeb = kIsWeb;
+    const isWeb = kIsWeb;
 
     return Scaffold(
       appBar: isSmallScreen

@@ -48,7 +48,7 @@ class _SuperintendentDashboardPageState
   late Animation<Offset> _slideAnimation;
 
   // Hover states for menu items
-  Map<String, bool> _isHovering = {
+  final Map<String, bool> _isHovering = {
     'dashboard': false,
     'students': false,
     'courses': false,
@@ -429,7 +429,7 @@ class _SuperintendentDashboardPageState
     final screenSize = MediaQuery.of(context).size;
     final isSmallScreen = screenSize.width < 600;
     final theme = Theme.of(context);
-    final isWeb = kIsWeb;
+    const isWeb = kIsWeb;
 
     return Scaffold(
       drawer: isSmallScreen
@@ -983,7 +983,7 @@ class _SuperintendentDashboardPageState
     return InkWell(
       onTap: () => _navigateToManagement(title.toLowerCase()),
       borderRadius: BorderRadius.circular(12),
-      child: Container(
+      child: SizedBox(
         width: 100,
         child: Column(
           children: [

@@ -243,7 +243,7 @@ class _StudentExamRegistrationPageState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
+        title: const Text(
           'Register Student for Exam',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
@@ -655,7 +655,7 @@ class _StudentExamRegistrationPageState
                 padding: const EdgeInsets.all(12.0),
                 child: Row(
                   children: [
-                    Text(
+                    const Text(
                       'Registration Type:',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,

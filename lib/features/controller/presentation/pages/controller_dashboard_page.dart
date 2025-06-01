@@ -134,7 +134,7 @@ class _ControllerDashboardPageState
   late Animation<Offset> _slideAnimation;
 
   // Hover states for menu items
-  Map<String, bool> _isHovering = {
+  final Map<String, bool> _isHovering = {
     'dashboard': false,
     'create_exams': false,
     'manage_exams': false,
@@ -559,7 +559,7 @@ class _ControllerDashboardPageState
     final holidaysAsync = ref.watch(holidaysProvider(_focusedDay.year));
     final screenSize = MediaQuery.of(context).size;
     final isSmallScreen = screenSize.width < 600;
-    final isWeb = kIsWeb;
+    const isWeb = kIsWeb;
 
     return Scaffold(
       drawer: isSmallScreen

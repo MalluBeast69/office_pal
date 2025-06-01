@@ -300,7 +300,7 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage>
                       fillColor: Colors.grey.shade50,
                     ),
                     readOnly: isEditing, // Don't allow editing course code
-                    style: isEditing ? TextStyle(color: Colors.grey) : null,
+                    style: isEditing ? const TextStyle(color: Colors.grey) : null,
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return 'Please enter course code';
@@ -818,7 +818,7 @@ class _CourseManagementPageState extends ConsumerState<CourseManagementPage>
                                 padding: const EdgeInsets.all(16.0),
                                 sliver: SliverGrid(
                                   gridDelegate:
-                                      SliverGridDelegateWithMaxCrossAxisExtent(
+                                      const SliverGridDelegateWithMaxCrossAxisExtent(
                                     maxCrossAxisExtent: 350,
                                     mainAxisSpacing: 16,
                                     crossAxisSpacing: 16,

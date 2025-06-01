@@ -316,8 +316,10 @@ class _LoginPageState extends ConsumerState<LoginPage>
           ),
         );
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (mounted) {
+        print('LOGIN_PAGE_SIGN_IN_ERROR: $error');
+        print('LOGIN_PAGE_SIGN_IN_STACKTRACE: $stackTrace');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('An unexpected error occurred'),
@@ -363,13 +365,13 @@ class _LoginPageState extends ConsumerState<LoginPage>
           children: [
             // Background with new gradient colors
             Container(
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    const Color(0xFF0052CC), // Deep blue
-                    const Color(0xFF00357A), // Darker blue
+                    Color(0xFF0052CC), // Deep blue
+                    Color(0xFF00357A), // Darker blue
                   ],
                 ),
               ),
@@ -422,10 +424,10 @@ class _LoginPageState extends ConsumerState<LoginPage>
                               ),
                             ],
                           ),
-                          child: Icon(
+                          child: const Icon(
                             Icons.school,
                             size: 40,
-                            color: const Color(0xFF0052CC),
+                            color: Color(0xFF0052CC),
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -673,16 +675,16 @@ class _LoginPageState extends ConsumerState<LoginPage>
                               width: 1,
                             ),
                           ),
-                          child: Row(
+                          child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.arrow_forward,
                                 color: Colors.white,
                                 size: 14,
                               ),
-                              const SizedBox(width: 6),
-                              const Text(
+                              SizedBox(width: 6),
+                              Text(
                                 'LEARN MORE',
                                 style: TextStyle(
                                   color: Colors.white,
@@ -953,12 +955,12 @@ class _LoginPageState extends ConsumerState<LoginPage>
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             'Sign In',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
-              color: const Color(0xFF0052CC),
+              color: Color(0xFF0052CC),
             ),
           ),
           const SizedBox(height: 8),
@@ -1214,7 +1216,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                 ),
               ),
               child: _isLoading
-                  ? SizedBox(
+                  ? const SizedBox(
                       width: 24,
                       height: 24,
                       child: CircularProgressIndicator(
@@ -1222,12 +1224,12 @@ class _LoginPageState extends ConsumerState<LoginPage>
                         strokeWidth: 2,
                       ),
                     )
-                  : Row(
+                  : const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.login, size: 20),
-                        const SizedBox(width: 8),
-                        const Text(
+                        Icon(Icons.login, size: 20),
+                        SizedBox(width: 8),
+                        Text(
                           'Sign In',
                           style: TextStyle(
                             fontSize: 16,

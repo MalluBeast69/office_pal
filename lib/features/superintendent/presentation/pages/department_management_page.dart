@@ -305,7 +305,7 @@ class _DepartmentManagementPageState
                   ),
                   child: Text(
                     department['dept_id'],
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.orange,
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -529,7 +529,7 @@ class _DepartmentManagementPageState
     final screenSize = MediaQuery.of(context).size;
     final isSmallScreen = screenSize.width < 600;
     final theme = Theme.of(context);
-    final isWeb = kIsWeb;
+    const isWeb = kIsWeb;
 
     return Scaffold(
       appBar: isSmallScreen

@@ -20,6 +20,11 @@ jobs:
       - name: Get Flutter dependencies
         run: flutter pub get
 
+      - name: Create dummy .env file for build
+        run: |
+          mkdir -p assets
+          echo "DUMMY_ENV_VAR_FOR_BUILD=placeholder" > assets/.env
+
       - name: Build Flutter Web
         run: |
           flutter build web --release \

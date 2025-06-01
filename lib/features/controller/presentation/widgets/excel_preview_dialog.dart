@@ -35,9 +35,11 @@ class ExcelPreviewDialog extends StatelessWidget {
           allowedExtensions: ['xlsx'],
         );
 
-        final file = File(outputFile!);
-        await file.writeAsBytes(excelBytes);
-            } catch (e) {
+        if (outputFile != null) {
+          final file = File(outputFile);
+          await file.writeAsBytes(excelBytes);
+        }
+      } catch (e) {
         debugPrint('Error saving Excel: $e');
       }
     }
@@ -100,6 +102,20 @@ class ExcelImportPreviewDialog extends ConsumerWidget {
 
     // Sort dates
     final sortedDates = examsByDate.keys.toList()..sort();
+
+    if (exams.isEmpty) {
+      // Handle empty exams list, perhaps show a message or return an empty dialog
+      return AlertDialog(
+        title: const Text('Import Preview'),
+        content: const Text('No exams to preview.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Close'),
+          ),
+        ],
+      );
+    }
 
     final holidaysAsync =
         ref.watch(holidaysProvider(exams.first.examDate.year));

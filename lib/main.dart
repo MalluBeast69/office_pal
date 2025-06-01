@@ -1,5 +1,7 @@
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:loading_animation_widget/loading_animation_widget.dart';
 import 'features/auth/presentation/pages/login_page.dart';
@@ -10,10 +12,13 @@ import 'features/superintendent/presentation/pages/seating_management_page.dart'
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Load .env file
+  await dotenv.load(fileName: ".env");
+
   await Supabase.initialize(
-    url: 'https://fnxirlpiqciezifongxb.supabase.co',
+    url: const String.fromEnvironment('SUPABASE_URL'),
     anonKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZueGlybHBpcWNpZXppZm9uZ3hiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzYzNjIxMzgsImV4cCI6MjA1MTkzODEzOH0.qbqwZJr9ufNbs3mjQHFuJMNlef-mUwBNoCaoeuHDGhM',
+        const String.fromEnvironment('SUPABASE_ANON_KEY'),
   );
 
   runApp(const ProviderScope(child: MyApp()));

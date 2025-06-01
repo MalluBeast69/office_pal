@@ -1,31 +1,36 @@
-name: Deploy to GitHub Pages
+name: Deploy Flutter Web to GitHub Pages
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main # Or your default branch
 
 jobs:
-  build:
+  build_and_deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v3
-      - uses: subosito/flutter-action@v2
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.27.3'
-          channel: 'stable'
-      
-      - name: Enable web
-        run: flutter config --enable-web
-        
-      - name: Get dependencies
+          channel: 'stable' # Or your preferred channel
+
+      - name: Get Flutter dependencies
         run: flutter pub get
-        
-      - name: Build web
-        run: flutter build web --release --base-href "/office_pal/"
-        
+
+      - name: Build Flutter Web
+        run: |
+          flutter build web --release \
+            --base-href="/office_pal/" \
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./build/web 
+          publish_dir: ./build/web
+          # Optional: if you're using a custom domain
+          # cname: your.custom.domain.com

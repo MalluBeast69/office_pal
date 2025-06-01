@@ -82,3 +82,5 @@ coverage/
 *.env
 .env*
 !.env.example
+DB.bat
+.cursorrules

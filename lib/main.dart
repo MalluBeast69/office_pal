@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -13,7 +12,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Load .env file
-  await dotenv.load(fileName: ".env");
+  await dotenv.load(fileName: "assets/.env");
 
   // Try to get from --dart-define first (for production/GitHub Pages)
   String? supabaseUrl = const String.fromEnvironment('SUPABASE_URL');
@@ -21,20 +20,16 @@ void main() async {
 
   // If not available from --dart-define (empty string), then use dotenv (for local dev)
   if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
-    print('DEBUG: Using dotenv for Supabase credentials (local development).');
     supabaseUrl = dotenv.env['SUPABASE_URL'];
     supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
-  } else {
-    print('DEBUG: Using String.fromEnvironment for Supabase credentials (production build).');
   }
-  
-  print('DEBUG: Final SUPABASE_URL: $supabaseUrl');
-  print('DEBUG: Final SUPABASE_ANON_KEY: $supabaseAnonKey');
 
-  if (supabaseUrl == null || supabaseUrl.isEmpty || supabaseAnonKey == null || supabaseAnonKey.isEmpty) {
-    print('ERROR: Supabase URL or Anon Key is null or empty. Ensure secrets are set for GitHub Actions and .env for local dev.');
-    // Potentially handle this error more gracefully, e.g., show an error page.
-    return; // Prevent further execution if keys are missing
+  if (supabaseUrl == null ||
+      supabaseUrl.isEmpty ||
+      supabaseAnonKey == null ||
+      supabaseAnonKey.isEmpty) {
+    throw Exception(
+        'ERROR: Supabase URL or Anon Key is null or empty. Ensure secrets are set for GitHub Actions and .env for local dev.');
   }
 
   await Supabase.initialize(
@@ -110,14 +105,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 
   Widget _handleAuthState(Session? session) {
-    print('Handling auth state for session: ${session?.user.email}');
-
     if (session == null) {
       return const LoginPage();
     }
 
     final userEmail = session.user.email?.toLowerCase() ?? '';
-    print('User email: $userEmail');
 
     if (userEmail.isEmpty) {
       return const LoginPage();
@@ -126,7 +118,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
     if (userEmail.contains('superintendent')) {
       return const SuperintendentDashboardPage();
     } else if (userEmail.contains('controller')) {
-      print('Navigating to Controller Dashboard');
       return const ControllerDashboardPage();
     }
 
@@ -138,10 +129,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
     return FutureBuilder<Session?>(
       future: _sessionFuture,
       builder: (context, snapshot) {
-        print('Future connection state: ${snapshot.connectionState}');
-        print('Future session email: ${snapshot.data?.user.email}');
-        print('Future has error: ${snapshot.hasError}');
-
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const LoadingScreen();
         }
@@ -150,11 +137,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
         return StreamBuilder<AuthState>(
           stream: Supabase.instance.client.auth.onAuthStateChange,
           builder: (context, streamSnapshot) {
-            print('Stream connection state: ${streamSnapshot.connectionState}');
-            print(
-                'Stream auth email: ${streamSnapshot.data?.session?.user.email}');
-            print('Stream has error: ${streamSnapshot.hasError}');
-
             // For sign out, we want to use the stream data only
             final session = streamSnapshot.data?.session;
             return _handleAuthState(session);

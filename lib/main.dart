@@ -11,15 +11,14 @@ import 'features/superintendent/presentation/pages/seating_management_page.dart'
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Load .env file
-  await dotenv.load(fileName: "assets/.env");
-
-  // Try to get from --dart-define first (for production/GitHub Pages)
   String? supabaseUrl = const String.fromEnvironment('SUPABASE_URL');
   String? supabaseAnonKey = const String.fromEnvironment('SUPABASE_ANON_KEY');
 
   // If not available from --dart-define (empty string), then use dotenv (for local dev)
+  // This check is important for local development where secrets are loaded from .env
   if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
+    // Load .env file only if running locally and dart-defines are not set
+    await dotenv.load(fileName: "assets/.env");
     supabaseUrl = dotenv.env['SUPABASE_URL'];
     supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
   }

@@ -79,8 +79,10 @@ app.*.map.json
 coverage/
 
 # Supabase
-*.env
-.env*
+# Supabase
+# *.env
+# .env*
+!.env
 !.env.example
 DB.bat
 .cursorrules
